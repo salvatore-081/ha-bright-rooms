@@ -1,0 +1,217 @@
+{
+  "config": {
+    "abort": {
+      "single_instance_allowed": "Bright Rooms è già configurato: aggiungi le stanze dalla sua pagina o dal suo pannello."
+    },
+    "step": {
+      "user": {
+        "title": "Bright Rooms",
+        "description": "Bright Rooms accende e spegne le luci di ogni stanza in base ai sensori di presenza e alla luce del giorno. Dopo questo passo aggiungi le stanze dalla pagina dell'integrazione o dal pannello Bright Rooms."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Impostazioni",
+        "description": "Come si calcola la luce ambiente e come si impara l'apporto di ogni luce.",
+        "data": {
+          "settle_seconds": "Tempo di assestamento dopo un cambio delle luci",
+          "learn_ambient_max": "Impara solo con luce ambiente fino a",
+          "learn_min_previous": "Impara solo se la luce era ferma da",
+          "learn_weight": "Peso di una nuova misura"
+        },
+        "data_description": {
+          "settle_seconds": "Dopo un cambio delle luci della stanza la luce ambiente resta ferma per questo tempo: i sensori di luminosità aggiornano in ritardo e alcune lampade si accendono piano. È anche il tempo fra le due letture di una misura.",
+          "learn_ambient_max": "Gli apporti si misurano solo con poca luce naturale, quando il salto del sensore è netto.",
+          "learn_weight": "Una nuova misura sposta il valore imparato di questa parte (0,2 = 20 %)."
+        }
+      }
+    }
+  },
+  "config_subentries": {
+    "room": {
+      "entry_type": "Stanza",
+      "initiate_flow": {
+        "user": "Aggiungi stanza"
+      },
+      "abort": {
+        "reconfigure_successful": "Stanza aggiornata."
+      },
+      "error": {
+        "area_taken": "Quest'area ha già una stanza.",
+        "no_presence": "Scegli almeno un sensore di presenza.",
+        "no_lights": "Scegli almeno una luce.",
+        "bright_not_above_dark": "Deve essere più alta della soglia del buio.",
+        "brightness_lux_order": "Deve essere più alta del valore della luminosità minima.",
+        "light_in_other_room": "Una di queste luci è già in un'altra stanza."
+      },
+      "step": {
+        "user": {
+          "title": "Aggiungi stanza",
+          "data": {
+            "area": "Area",
+            "presence_sensors": "Sensori di presenza",
+            "zone_sensors": "Sensori di presenza delle aree vicine",
+            "lights": "Luci",
+            "illuminance_sensor": "Sensore di luminosità",
+            "other_lights": "Altre luci viste dal sensore di luminosità",
+            "on_delay": "Presenza prima di accendere",
+            "only_when_dark": "Accendi solo con il buio",
+            "dark_below": "Buio sotto",
+            "bright_above": "Luce sopra",
+            "off_when_bright": "Spegni quando fa giorno",
+            "bright_minutes": "Luce per almeno",
+            "min_off_seconds": "Tempo minimo fra due cambi",
+            "brightness_min": "Luminosità al buio",
+            "brightness_dark_lux": "Luminosità minima fino a",
+            "brightness_full_lux": "Luminosità piena da",
+            "empty_wait": "Attesa con la stanza vuota",
+            "zone_wait": "Attesa massima in più con le aree vicine occupate",
+            "dim_percent": "Abbassa al",
+            "dim_wait": "Abbassate per",
+            "transition": "Transizione allo spegnimento"
+          },
+          "data_description": {
+            "presence_sensors": "La stanza è occupata finché almeno uno è acceso.",
+            "zone_sensors": "Se uno di questi rileva qualcuno, lo spegnimento aspetta di più: spesso ci si sposta fra aree vicine e si torna.",
+            "lights": "Le luci comandate da Bright Rooms. Una luce può stare in una sola stanza.",
+            "illuminance_sensor": "Facoltativo. Senza, la stanza è sempre considerata al buio e le luci dimmerabili si accendono al massimo.",
+            "other_lights": "Luci di altre stanze che il sensore di luminosità vede: se una di queste cambia, la misura dell'apporto di una luce viene scartata.",
+            "on_delay": "Per quanto tempo deve esserci qualcuno, senza interruzioni, prima di accendere.",
+            "only_when_dark": "La luce ambiente si misura senza le luci della stanza.",
+            "bright_above": "Deve essere più alta della soglia del buio: nel mezzo la stanza resta com'era.",
+            "off_when_bright": "Anche con qualcuno nella stanza, ma solo nel passaggio dal buio alla luce: una luce accesa a mano quando c'è già luce resta accesa.",
+            "min_off_seconds": "Per le lampade che cambiano tonalità se spente e riaccese in fretta.",
+            "brightness_min": "Luci dimmerabili: luminosità con la luce ambiente fino al valore seguente; 100 % dal valore della luminosità piena, in proporzione nel mezzo.",
+            "empty_wait": "Con la stanza e le aree vicine vuote, prima di abbassare o spegnere.",
+            "dim_percent": "Prima di spegnere, le luci dimmerabili si abbassano a questa parte della loro luminosità come avviso (100 % = nessun avviso). Se qualcuno torna, riprendono la luminosità di prima.",
+            "transition": "Solo luci dimmerabili."
+          },
+          "description": "Una stanza per area. L'apporto di ogni luce si impara da solo, oppure si imposta nel pannello Bright Rooms."
+        },
+        "reconfigure": {
+          "title": "Modifica stanza",
+          "data": {
+            "area": "Area",
+            "presence_sensors": "Sensori di presenza",
+            "zone_sensors": "Sensori di presenza delle aree vicine",
+            "lights": "Luci",
+            "illuminance_sensor": "Sensore di luminosità",
+            "other_lights": "Altre luci viste dal sensore di luminosità",
+            "on_delay": "Presenza prima di accendere",
+            "only_when_dark": "Accendi solo con il buio",
+            "dark_below": "Buio sotto",
+            "bright_above": "Luce sopra",
+            "off_when_bright": "Spegni quando fa giorno",
+            "bright_minutes": "Luce per almeno",
+            "min_off_seconds": "Tempo minimo fra due cambi",
+            "brightness_min": "Luminosità al buio",
+            "brightness_dark_lux": "Luminosità minima fino a",
+            "brightness_full_lux": "Luminosità piena da",
+            "empty_wait": "Attesa con la stanza vuota",
+            "zone_wait": "Attesa massima in più con le aree vicine occupate",
+            "dim_percent": "Abbassa al",
+            "dim_wait": "Abbassate per",
+            "transition": "Transizione allo spegnimento"
+          },
+          "data_description": {
+            "presence_sensors": "La stanza è occupata finché almeno uno è acceso.",
+            "zone_sensors": "Se uno di questi rileva qualcuno, lo spegnimento aspetta di più: spesso ci si sposta fra aree vicine e si torna.",
+            "lights": "Le luci comandate da Bright Rooms. Una luce può stare in una sola stanza.",
+            "illuminance_sensor": "Facoltativo. Senza, la stanza è sempre considerata al buio e le luci dimmerabili si accendono al massimo.",
+            "other_lights": "Luci di altre stanze che il sensore di luminosità vede: se una di queste cambia, la misura dell'apporto di una luce viene scartata.",
+            "on_delay": "Per quanto tempo deve esserci qualcuno, senza interruzioni, prima di accendere.",
+            "only_when_dark": "La luce ambiente si misura senza le luci della stanza.",
+            "bright_above": "Deve essere più alta della soglia del buio: nel mezzo la stanza resta com'era.",
+            "off_when_bright": "Anche con qualcuno nella stanza, ma solo nel passaggio dal buio alla luce: una luce accesa a mano quando c'è già luce resta accesa.",
+            "min_off_seconds": "Per le lampade che cambiano tonalità se spente e riaccese in fretta.",
+            "brightness_min": "Luci dimmerabili: luminosità con la luce ambiente fino al valore seguente; 100 % dal valore della luminosità piena, in proporzione nel mezzo.",
+            "empty_wait": "Con la stanza e le aree vicine vuote, prima di abbassare o spegnere.",
+            "dim_percent": "Prima di spegnere, le luci dimmerabili si abbassano a questa parte della loro luminosità come avviso (100 % = nessun avviso). Se qualcuno torna, riprendono la luminosità di prima.",
+            "transition": "Solo luci dimmerabili."
+          }
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "dark": {
+        "name": "Buio"
+      }
+    },
+    "sensor": {
+      "ambient_light": {
+        "name": "Luce ambiente",
+        "state_attributes": {
+          "raw": {
+            "name": "Lettura del sensore"
+          },
+          "held": {
+            "name": "In attesa"
+          }
+        }
+      },
+      "status": {
+        "name": "Stato",
+        "state": {
+          "disabled": "Disattivata",
+          "off": "Spente",
+          "on": "Accese",
+          "waiting": "In attesa di spegnere",
+          "dimmed": "Abbassate, stanno per spegnersi"
+        },
+        "state_attributes": {
+          "last_action": {
+            "name": "Ultima azione",
+            "state": {
+              "turned_on": "Accese",
+              "turned_off": "Spente",
+              "dimmed": "Abbassate",
+              "restored": "Luminosità ripristinata",
+              "skipped_on": "Non accese"
+            }
+          },
+          "reason": {
+            "name": "Motivo",
+            "state": {
+              "presence_dark": "Presenza al buio",
+              "presence_always": "Presenza",
+              "bright": "C'è abbastanza luce",
+              "empty": "Stanza vuota",
+              "zone_timeout": "Stanza vuota, aree vicine ancora occupate",
+              "presence_back": "È tornato qualcuno",
+              "changed_by_someone_else": "Luci cambiate da qualcun altro",
+              "not_dark": "Non è buio",
+              "lights_already_on": "Luci già accese",
+              "disabled": "Disattivata"
+            }
+          },
+          "at": {
+            "name": "Alle"
+          },
+          "deadline": {
+            "name": "Prossimo passo"
+          }
+        }
+      },
+      "contribution": {
+        "name": "Apporto {light}",
+        "state_attributes": {
+          "samples": {
+            "name": "Misure"
+          },
+          "updated": {
+            "name": "Aggiornato"
+          }
+        }
+      }
+    },
+    "switch": {
+      "automatic": {
+        "name": "Automatico"
+      }
+    }
+  }
+}

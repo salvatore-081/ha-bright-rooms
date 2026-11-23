@@ -1,0 +1,217 @@
+{
+  "config": {
+    "abort": {
+      "single_instance_allowed": "Bright Rooms is already set up: add rooms from its page or from its panel."
+    },
+    "step": {
+      "user": {
+        "title": "Bright Rooms",
+        "description": "Bright Rooms switches the lights of each room with its presence sensors and the daylight. After this step, add the rooms from the integration page or from the Bright Rooms panel."
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Settings",
+        "description": "How the ambient light is computed and how each light's contribution is learned.",
+        "data": {
+          "settle_seconds": "Settling time after a light changes",
+          "learn_ambient_max": "Learn only with ambient light up to",
+          "learn_min_previous": "Learn only if the light was unchanged for",
+          "learn_weight": "Weight of a new measurement"
+        },
+        "data_description": {
+          "settle_seconds": "The ambient light is held for this long after a room light changes: illuminance sensors report late and some lamps ramp up. It is also the time between the two readings of a measurement.",
+          "learn_ambient_max": "Contributions are measured only with little daylight, when the jump of the sensor is clear.",
+          "learn_weight": "A new measurement moves the learned value by this share (0.2 = 20 %)."
+        }
+      }
+    }
+  },
+  "config_subentries": {
+    "room": {
+      "entry_type": "Room",
+      "initiate_flow": {
+        "user": "Add room"
+      },
+      "abort": {
+        "reconfigure_successful": "Room updated."
+      },
+      "error": {
+        "area_taken": "This area already has a room.",
+        "no_presence": "Choose at least one presence sensor.",
+        "no_lights": "Choose at least one light.",
+        "bright_not_above_dark": "Must be higher than the dark threshold.",
+        "brightness_lux_order": "Must be higher than the lowest brightness value.",
+        "light_in_other_room": "One of these lights already belongs to another room."
+      },
+      "step": {
+        "user": {
+          "title": "Add room",
+          "data": {
+            "area": "Area",
+            "presence_sensors": "Presence sensors",
+            "zone_sensors": "Presence sensors of nearby areas",
+            "lights": "Lights",
+            "illuminance_sensor": "Illuminance sensor",
+            "other_lights": "Other lights seen by the illuminance sensor",
+            "on_delay": "Presence before turning on",
+            "only_when_dark": "Turn on only when dark",
+            "dark_below": "Dark below",
+            "bright_above": "Bright above",
+            "off_when_bright": "Turn off when it becomes bright",
+            "bright_minutes": "Bright for at least",
+            "min_off_seconds": "Minimum time between changes",
+            "brightness_min": "Brightness in the dark",
+            "brightness_dark_lux": "Lowest brightness at or below",
+            "brightness_full_lux": "Full brightness at or above",
+            "empty_wait": "Wait with the room empty",
+            "zone_wait": "Longest extra wait while a nearby area is occupied",
+            "dim_percent": "Dim to",
+            "dim_wait": "Dimmed for",
+            "transition": "Transition when turning off"
+          },
+          "data_description": {
+            "presence_sensors": "The room is occupied while at least one of them is on.",
+            "zone_sensors": "While one of them is on, turning off waits longer: people often move between nearby areas and come back.",
+            "lights": "The lights Bright Rooms switches. A light can belong to one room only.",
+            "illuminance_sensor": "Optional. Without it the room always counts as dark and dimmable lights turn on at full brightness.",
+            "other_lights": "Lights of other rooms that the illuminance sensor sees: a measurement of a light's contribution is discarded when one of them changes.",
+            "on_delay": "Continuous presence needed before the lights turn on.",
+            "only_when_dark": "Ambient light is measured without the room's own lights.",
+            "bright_above": "Must be higher than the dark threshold: in between, the room keeps its previous state.",
+            "off_when_bright": "Also with people in the room, but only when it goes from dark to bright: a light turned on by hand when it is already bright stays on.",
+            "min_off_seconds": "For lamps that change tint when switched off and on quickly.",
+            "brightness_min": "Dimmable lights: brightness when the ambient light is at or below the next value; 100 % at the full brightness value, linear in between.",
+            "empty_wait": "With the room and the nearby areas empty, before dimming or turning off.",
+            "dim_percent": "Dimmable lights are dimmed to this share of their brightness as a warning before turning off (100 % = no warning). If someone comes back, they return to their brightness.",
+            "transition": "Dimmable lights only."
+          },
+          "description": "One room per area. The contribution of each light is learned by itself, or can be set in the Bright Rooms panel."
+        },
+        "reconfigure": {
+          "title": "Edit room",
+          "data": {
+            "area": "Area",
+            "presence_sensors": "Presence sensors",
+            "zone_sensors": "Presence sensors of nearby areas",
+            "lights": "Lights",
+            "illuminance_sensor": "Illuminance sensor",
+            "other_lights": "Other lights seen by the illuminance sensor",
+            "on_delay": "Presence before turning on",
+            "only_when_dark": "Turn on only when dark",
+            "dark_below": "Dark below",
+            "bright_above": "Bright above",
+            "off_when_bright": "Turn off when it becomes bright",
+            "bright_minutes": "Bright for at least",
+            "min_off_seconds": "Minimum time between changes",
+            "brightness_min": "Brightness in the dark",
+            "brightness_dark_lux": "Lowest brightness at or below",
+            "brightness_full_lux": "Full brightness at or above",
+            "empty_wait": "Wait with the room empty",
+            "zone_wait": "Longest extra wait while a nearby area is occupied",
+            "dim_percent": "Dim to",
+            "dim_wait": "Dimmed for",
+            "transition": "Transition when turning off"
+          },
+          "data_description": {
+            "presence_sensors": "The room is occupied while at least one of them is on.",
+            "zone_sensors": "While one of them is on, turning off waits longer: people often move between nearby areas and come back.",
+            "lights": "The lights Bright Rooms switches. A light can belong to one room only.",
+            "illuminance_sensor": "Optional. Without it the room always counts as dark and dimmable lights turn on at full brightness.",
+            "other_lights": "Lights of other rooms that the illuminance sensor sees: a measurement of a light's contribution is discarded when one of them changes.",
+            "on_delay": "Continuous presence needed before the lights turn on.",
+            "only_when_dark": "Ambient light is measured without the room's own lights.",
+            "bright_above": "Must be higher than the dark threshold: in between, the room keeps its previous state.",
+            "off_when_bright": "Also with people in the room, but only when it goes from dark to bright: a light turned on by hand when it is already bright stays on.",
+            "min_off_seconds": "For lamps that change tint when switched off and on quickly.",
+            "brightness_min": "Dimmable lights: brightness when the ambient light is at or below the next value; 100 % at the full brightness value, linear in between.",
+            "empty_wait": "With the room and the nearby areas empty, before dimming or turning off.",
+            "dim_percent": "Dimmable lights are dimmed to this share of their brightness as a warning before turning off (100 % = no warning). If someone comes back, they return to their brightness.",
+            "transition": "Dimmable lights only."
+          }
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "dark": {
+        "name": "Dark"
+      }
+    },
+    "sensor": {
+      "ambient_light": {
+        "name": "Ambient light",
+        "state_attributes": {
+          "raw": {
+            "name": "Sensor reading"
+          },
+          "held": {
+            "name": "Held"
+          }
+        }
+      },
+      "status": {
+        "name": "Status",
+        "state": {
+          "disabled": "Disabled",
+          "off": "Off",
+          "on": "On",
+          "waiting": "Waiting to turn off",
+          "dimmed": "Dimmed, about to turn off"
+        },
+        "state_attributes": {
+          "last_action": {
+            "name": "Last action",
+            "state": {
+              "turned_on": "Turned on",
+              "turned_off": "Turned off",
+              "dimmed": "Dimmed",
+              "restored": "Brightness restored",
+              "skipped_on": "Not turned on"
+            }
+          },
+          "reason": {
+            "name": "Reason",
+            "state": {
+              "presence_dark": "Presence in the dark",
+              "presence_always": "Presence",
+              "bright": "Bright enough",
+              "empty": "Room empty",
+              "zone_timeout": "Room empty, nearby areas still occupied",
+              "presence_back": "Someone came back",
+              "changed_by_someone_else": "Lights changed by someone else",
+              "not_dark": "Not dark",
+              "lights_already_on": "Lights already on",
+              "disabled": "Disabled"
+            }
+          },
+          "at": {
+            "name": "At"
+          },
+          "deadline": {
+            "name": "Next step"
+          }
+        }
+      },
+      "contribution": {
+        "name": "Contribution {light}",
+        "state_attributes": {
+          "samples": {
+            "name": "Measurements"
+          },
+          "updated": {
+            "name": "Updated"
+          }
+        }
+      }
+    },
+    "switch": {
+      "automatic": {
+        "name": "Automatic"
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "domain": "bright_rooms",
+  "name": "Bright Rooms",
+  "after_dependencies": [
+    "frontend",
+    "http",
+    "websocket_api"
+  ],
+  "codeowners": [
+    "@salvatore-081"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "light"
+  ],
+  "documentation": "https://github.com/salvatore-081/ha-bright-rooms",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/salvatore-081/ha-bright-rooms/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.1.0"
+}
