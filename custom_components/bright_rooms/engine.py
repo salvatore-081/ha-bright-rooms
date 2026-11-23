@@ -76,6 +76,7 @@ from .const import (
     CONF_NAME,
     CONF_OFF_WHEN_BRIGHT,
     CONF_ON_DELAY,
+    CONF_ON_WHEN_DARK,
     CONF_ONLY_WHEN_DARK,
     CONF_OTHER_LIGHTS,
     CONF_PRESENCE_SENSORS,
@@ -141,6 +142,7 @@ class RoomConfig:
     dark_below: float
     bright_above: float
     off_when_bright: bool
+    on_when_dark: bool
     bright_minutes: float
     min_off_seconds: float
     brightness_min: float
@@ -168,6 +170,7 @@ class RoomConfig:
             dark_below=float(d[CONF_DARK_BELOW]),
             bright_above=float(d[CONF_BRIGHT_ABOVE]),
             off_when_bright=bool(d[CONF_OFF_WHEN_BRIGHT]),
+            on_when_dark=bool(d[CONF_ON_WHEN_DARK]),
             bright_minutes=float(d[CONF_BRIGHT_MINUTES]),
             min_off_seconds=float(d[CONF_MIN_OFF_SECONDS]),
             brightness_min=float(d[CONF_BRIGHTNESS_MIN]),
@@ -517,9 +520,34 @@ class RoomEngine:
         self._pending_on = False
         self._cancel("on")
 
+    def _on_became_dark(self) -> None:
+        """Dark arrived with people already in the room: as if they came in now.
+
+        No `on_delay` (the room is already occupied); only when every
+        available light is off, so lights turned off by hand stay off.
+        """
+        cfg = self.cfg
+        if (
+            not (self.enabled and cfg.on_when_dark and cfg.only_when_dark)
+            or self.occupied is not True
+            or self._pending_on
+            or self._seq is not None
+        ):
+            return
+        states = [self.hass.states.get(e) for e in cfg.lights]
+        available = [s for s in states if s is not None and _available(s)]
+        if not available or any(s.state == STATE_ON for s in available):
+            return
+        self._pending_on = True
+        self._schedule("on", 0, lambda: self._try_turn_on(Reason.BECAME_DARK))
+
     @callback
-    def _try_turn_on(self) -> None:
-        """Turn the lights on if the room still wants them."""
+    def _try_turn_on(self, reason: Reason | None = None) -> None:
+        """Turn the lights on if the room still wants them.
+
+        `reason` None: someone came in (skips are recorded); otherwise the
+        reason of the turn-on, and a skip is silent.
+        """
         now = dt_util.utcnow()
         self._pending_on = False
         if not self.enabled or self.occupied is not True:
@@ -529,10 +557,12 @@ class RoomEngine:
         if not available:
             return
         if any(states[e].state == STATE_ON for e in available):  # type: ignore[union-attr]
-            self._record(Action.SKIPPED_ON, Reason.LIGHTS_ALREADY_ON, now)
+            if reason is None:
+                self._record(Action.SKIPPED_ON, Reason.LIGHTS_ALREADY_ON, now)
             return
         if self.cfg.only_when_dark and self.dark is False:
-            self._record(Action.SKIPPED_ON, Reason.NOT_DARK, now)
+            if reason is None:
+                self._record(Action.SKIPPED_ON, Reason.NOT_DARK, now)
             return
         ready = max(states[e].last_changed for e in available) + timedelta(  # type: ignore[union-attr]
             seconds=self.cfg.min_off_seconds
@@ -540,11 +570,15 @@ class RoomEngine:
         if ready > now:
             # Lamps that change tint when switched quickly: wait, then check again.
             self._pending_on = True
-            self._schedule("on", (ready - now).total_seconds(), self._try_turn_on)
+            self._schedule(
+                "on", (ready - now).total_seconds(), lambda: self._try_turn_on(reason)
+            )
             return
-        self._turn_on(available, now)
+        self._turn_on(available, now, reason)
 
-    def _turn_on(self, lights: list[str], now: datetime) -> None:
+    def _turn_on(
+        self, lights: list[str], now: datetime, reason: Reason | None = None
+    ) -> None:
         cfg = self.cfg
         dimmable = [e for e in lights if self.dimmable(e)]
         plain = [e for e in lights if e not in dimmable]
@@ -558,7 +592,10 @@ class RoomEngine:
                 cfg.brightness_full_lux,
             )
             self._call(SERVICE_TURN_ON, dimmable, {ATTR_BRIGHTNESS_PCT: pct})
-        reason = Reason.PRESENCE_DARK if cfg.only_when_dark else Reason.PRESENCE_ALWAYS
+        if reason is None:
+            reason = (
+                Reason.PRESENCE_DARK if cfg.only_when_dark else Reason.PRESENCE_ALWAYS
+            )
         self._record(Action.TURNED_ON, reason, now)
 
     # -------------------------------------------------------------- turn off
@@ -720,6 +757,8 @@ class RoomEngine:
         elif self.dark is not False and self._bright_deadline is not None:
             self._bright_deadline = None
             self._cancel("bright")
+        if previous is False and self.dark is True:
+            self._on_became_dark()
 
     # -------------------------------------------------------------- learning
 

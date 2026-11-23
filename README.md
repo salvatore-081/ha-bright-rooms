@@ -10,6 +10,7 @@ Most presence automations either ignore daylight or are fooled by their own lamp
 
 - **Turning on**: when someone comes in (after an optional delay of continuous presence) and the room is dark, Bright Rooms turns on the room's lights if all of them are off. Dimmable lights get a brightness that follows the ambient light: lower in the dark (for example at night), full when there is some daylight. Lamps that change tint when switched quickly can be given a minimum time between changes.
 - **Turning off when the room empties**: Bright Rooms waits a little (longer while someone is detected in nearby areas, such as the table next to the kitchen), then dims the dimmable lights as a warning, then turns everything off. If someone comes back while the lights are dimmed, they go back to their brightness: nothing is ever switched off and on again. If someone changes a light in the meantime, Bright Rooms leaves everything as it is.
+- **Turning on when it becomes dark**: if someone sat down while it was bright and is still there at dusk, the lights turn on when it becomes dark, as if they had just come in (when all the room's lights are off). Only on that transition: lights turned off by hand once it is dark stay off.
 - **Turning off when it becomes bright**: when the ambient light goes from dark to bright and stays bright for some minutes, the lights go off, also with people in the room. Only on that transition: a light turned on by hand when it is already bright stays on.
 - **Your choices win**: a light turned off by hand while the room is occupied is not turned on again until the next time someone comes in. Lights changed by other automations or by hand count as "someone else".
 - **Learning the lamps**: every time a light is switched on or off (by Bright Rooms or by anyone), with little daylight and nothing else changing, Bright Rooms compares the illuminance before and after and updates that light's **contribution** (lux at full brightness). Lights switched together count as one measurement: if their values are known they are scaled together; if only one is unknown, it gets the part the others do not explain. Measurements that look wrong are discarded. Values can also be set by hand.
@@ -70,6 +71,7 @@ Main room settings:
 | Presence before turning on | 0 s | Continuous presence needed before the lights turn on |
 | Turn on only when dark | on | Otherwise the lights turn on whenever someone comes in |
 | Dark below / bright above | 40 / 80 lx | Ambient light thresholds, with hysteresis in between |
+| Turn on when it becomes dark | on | Only on the bright → dark transition, with someone already in the room |
 | Turn off when it becomes bright | on, after 10 min | Only on the dark → bright transition |
 | Brightness in the dark | 100 % | Dimmable lights at or below 10 lx; 100 % from 200 lx, linear in between |
 | Wait with the room empty | 30 s | Before dimming or turning off |

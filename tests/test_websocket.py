@@ -198,6 +198,7 @@ async def test_schema(
         "dark_below",
         "bright_above",
         "off_when_bright",
+        "on_when_dark",
         "bright_minutes",
         "min_off_seconds",
         "brightness_min",
@@ -487,4 +488,4 @@ def test_versions_match() -> None:
         (root / "custom_components/bright_rooms/manifest.json").read_text()
     )
     frontend = json.loads((root / "frontend/package.json").read_text())
-    assert manifest["version"] == frontend["version"] == "0.1.1"
+    assert manifest["version"] == frontend["version"] == "0.1.2"

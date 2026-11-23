@@ -86,6 +86,7 @@ export const ROOM_GROUPS: { key: string; icon: string; fields: string[] }[] = [
       "dark_below",
       "bright_above",
       "off_when_bright",
+      "on_when_dark",
       "bright_minutes",
     ],
   },

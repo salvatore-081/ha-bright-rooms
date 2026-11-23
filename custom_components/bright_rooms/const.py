@@ -38,6 +38,7 @@ CONF_ONLY_WHEN_DARK: Final = "only_when_dark"
 CONF_DARK_BELOW: Final = "dark_below"
 CONF_BRIGHT_ABOVE: Final = "bright_above"
 CONF_OFF_WHEN_BRIGHT: Final = "off_when_bright"
+CONF_ON_WHEN_DARK: Final = "on_when_dark"
 CONF_BRIGHT_MINUTES: Final = "bright_minutes"
 CONF_MIN_OFF_SECONDS: Final = "min_off_seconds"
 CONF_BRIGHTNESS_MIN: Final = "brightness_min"
@@ -55,6 +56,7 @@ ROOM_DEFAULTS: Final[dict[str, object]] = {
     CONF_DARK_BELOW: 40,
     CONF_BRIGHT_ABOVE: 80,
     CONF_OFF_WHEN_BRIGHT: True,
+    CONF_ON_WHEN_DARK: True,
     CONF_BRIGHT_MINUTES: 10,
     CONF_MIN_OFF_SECONDS: 0,
     CONF_BRIGHTNESS_MIN: 100,
@@ -106,6 +108,7 @@ class Reason(StrEnum):
 
     PRESENCE_DARK = "presence_dark"
     PRESENCE_ALWAYS = "presence_always"
+    BECAME_DARK = "became_dark"
     BRIGHT = "bright"
     EMPTY = "empty"
     ZONE_TIMEOUT = "zone_timeout"

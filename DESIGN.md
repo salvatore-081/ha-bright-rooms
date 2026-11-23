@@ -52,6 +52,7 @@ This file is the contract between the backend (`custom_components/bright_rooms`,
 | `dark_below` | lx | 40 | Dark under this ambient light |
 | `bright_above` | lx | 80 | Bright over this (must be > `dark_below`) |
 | `off_when_bright` | bool | true | Turn off when it becomes bright |
+| `on_when_dark` | bool | true | Turn on when it becomes dark with people already in the room (only with `only_when_dark`) |
 | `bright_minutes` | min, 0–120 | 10 | Bright for this long before turning off |
 | `min_off_seconds` | s, 0–60 | 0 | Minimum time between a light's last change and turning it on (lamps that change tint when switched quickly) |
 | `brightness_min` | %, 1–100 | 100 | Dimmable lights: brightness at or below `brightness_dark_lux` |
@@ -123,8 +124,16 @@ Status (`status` sensor, enum): `disabled` (switch off), `off` (lights off), `on
    change of a member cancels the measurement in progress; a light switching in the other direction, or
    outside the 2 s without the same context, spoils it.
 
+5. **Turn on when it becomes dark** – when dark goes from `False` to `True` (not from `None`), with
+   `on_when_dark` and `only_when_dark`, the room enabled and occupied, no turn-on already pending and every
+   available room light off (at least one available): turn on as in step 1, without `on_delay` (the room is
+   already occupied) but with the same `min_off_seconds` wait and recheck and the same brightness curve.
+   Reason `became_dark`; a skip at the recheck is not recorded. Only on that transition: lights turned off by
+   hand once it is already dark stay off. Without `only_when_dark` the option is ignored (the lights were
+   turned on at arrival). Rooms saved without the key take the default (true).
+
 Every action records `last_action` = `{action, reason, at}` with `action` in `turned_on`, `turned_off`,
-`dimmed`, `restored`, `skipped_on` and `reason` a key: `presence_dark`, `presence_always`, `bright`,
+`dimmed`, `restored`, `skipped_on` and `reason` a key: `presence_dark`, `presence_always`, `became_dark`, `bright`,
 `empty`, `zone_timeout`, `presence_back`, `changed_by_someone_else`, `not_dark`, `lights_already_on`,
 `disabled`. `skipped_on` is recorded when presence arrives but the lights are not turned on (`not_dark`).
 `deadline`: ISO time of the next timed step (end of the wait, of the dimming, of the bright timer), or null.
@@ -231,6 +240,6 @@ opens the panel room page. Visual editor (title, rooms).
 As Tidy Rooms: `hacs.json` with `zip_release` and `filename: bright_rooms.zip`, minimum Home Assistant
 `2026.10.0`; workflows Tests (pytest with `pytest-homeassistant-custom-component`, frontend lint, typecheck,
 vitest, build), Validate (HACS action, hassfest), Release (checks the tag against `manifest.json` and
-`frontend/package.json`, builds, uploads the zip). Version 0.1.1. `manifest.json`: `single_config_entry`
+`frontend/package.json`, builds, uploads the zip). Version 0.1.2. `manifest.json`: `single_config_entry`
 true, `integration_type` "service", `iot_class` "calculated", `dependencies` ["light"],
 `after_dependencies` ["frontend", "http", "websocket_api"]. Brand icon in `custom_components/bright_rooms/brand`.

@@ -12,6 +12,7 @@ from custom_components.bright_rooms.const import (
     CONF_ONLY_WHEN_DARK,
     CONF_OTHER_LIGHTS,
 )
+from custom_components.bright_rooms.engine import RoomConfig
 
 from .helpers import (
     CEILING,
@@ -191,6 +192,149 @@ async def test_manual_off_while_occupied_not_lit_again(
     await presence(hass, True)
     await settle(hass)
     assert len(lights.of("turn_on")) == 2
+
+
+# ------------------------------------------------------------- dusk
+
+
+async def _seated_in_daylight(hass, freezer, options=None, **room):
+    """Someone sits down while it is bright: the lights stay off."""
+    entry, lights = await make(hass, freezer, lux="500", options=options, **room)
+    await presence(hass, True)
+    await advance(hass, freezer, room.get(CONF_ON_DELAY, 0) + 1)
+    await settle(hass)
+    assert lights.calls == []
+    assert _last(kitchen(entry)) == ("skipped_on", "not_dark")
+    return entry, lights
+
+
+async def test_turns_on_when_it_becomes_dark(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await _seated_in_daylight(
+        hass, freezer, **{CONF_BRIGHTNESS_MIN: 20, CONF_ON_DELAY: 60}
+    )
+    await advance(hass, freezer, 600, step=60)
+    await lux(hass, 30)  # dusk: dark now, no on_delay (already occupied)
+    await settle(hass)
+    calls = {tuple(c.data["entity_id"]): dict(c.data) for c in lights.of("turn_on")}
+    # 20 % at 10 lx, 100 % at 200 lx: 28 % at 30 lx.
+    assert calls == {
+        (STRIP,): {"entity_id": [STRIP]},
+        (CEILING,): {"entity_id": [CEILING], "brightness_pct": 28},
+    }
+    assert _last(kitchen(entry)) == ("turned_on", "became_dark")
+
+
+async def test_not_lit_again_at_dusk_after_manual_off(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    _entry, lights = await _seated_in_daylight(hass, freezer)
+    await lux(hass, 30)
+    await settle(hass)
+    lights.clear()
+    set_light(hass, CEILING, "off")
+    set_light(hass, STRIP, "off")
+    for value in (20, 35, 39, 25):  # still dark: no new transition
+        await lux(hass, value)
+        await advance(hass, freezer, 60, step=10)
+    assert lights.calls == []
+
+
+async def test_dusk_respects_min_off_seconds(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await _seated_in_daylight(
+        hass, freezer, options={"settle_seconds": 10}, **{CONF_MIN_OFF_SECONDS: 30}
+    )
+    set_light(hass, CEILING, "on")
+    set_light(hass, CEILING, "off")
+    await advance(hass, freezer, 10)  # the ambient light is no longer held
+    await lux(hass, 30)
+    assert lights.calls == []
+    await advance(hass, freezer, 19)
+    assert lights.calls == []
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert len(lights.of("turn_on")) == 2
+    assert _last(kitchen(entry)) == ("turned_on", "became_dark")
+
+
+async def test_dusk_not_when_empty(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    _entry, lights = await make(hass, freezer, lux="500")
+    await lux(hass, 30)
+    await settle(hass)
+    assert lights.calls == []
+
+
+async def test_dusk_not_when_a_light_is_on(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    _entry, lights = await _seated_in_daylight(hass, freezer)
+    set_light(hass, STRIP, "on")
+    await lux(hass, 30)
+    await settle(hass)
+    assert lights.calls == []
+
+
+async def test_dusk_not_when_disabled(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await _seated_in_daylight(hass, freezer)
+    kitchen(entry).set_enabled(False)
+    await lux(hass, 30)
+    await settle(hass)
+    assert lights.calls == []
+
+
+async def test_dusk_not_from_unknown(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """No reading, then a dark one: not a transition from bright."""
+    entry, lights = await _seated_in_daylight(hass, freezer)
+    hass.states.async_set(LUX, "unavailable")
+    await hass.async_block_till_done()
+    assert kitchen(entry).dark is None
+    await lux(hass, 30)
+    await settle(hass)
+    assert lights.calls == []
+
+
+async def test_dusk_option_off(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    _entry, lights = await _seated_in_daylight(hass, freezer, on_when_dark=False)
+    await lux(hass, 30)
+    await settle(hass)
+    assert lights.calls == []
+
+
+async def test_dusk_ignored_without_only_when_dark(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """The lights went on at arrival; turned off by hand, they stay off at dusk."""
+    entry, lights = await make(hass, freezer, lux="500", **{CONF_ONLY_WHEN_DARK: False})
+    await presence(hass, True)
+    await settle(hass)
+    assert _last(kitchen(entry)) == ("turned_on", "presence_always")
+    set_light(hass, CEILING, "off")
+    set_light(hass, STRIP, "off")
+    lights.clear()
+    await lux(hass, 30)
+    await settle(hass)
+    assert lights.calls == []
+
+
+async def test_room_saved_without_the_option_turns_on_at_dusk(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, _lights = await make(hass, freezer, lux="500")
+    room = kitchen(entry)
+    data = dict(room.data)
+    data.pop("on_when_dark")
+    assert RoomConfig.from_data(data).on_when_dark is True
 
 
 # ------------------------------------------------------------------ startup

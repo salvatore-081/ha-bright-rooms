@@ -10,6 +10,7 @@ export type ActionKind = "turned_on" | "turned_off" | "dimmed" | "restored" | "s
 export type ActionReason =
   | "presence_dark"
   | "presence_always"
+  | "became_dark"
   | "bright"
   | "empty"
   | "zone_timeout"
@@ -41,6 +42,7 @@ export interface RoomConfig {
   dark_below: number;
   bright_above: number;
   off_when_bright?: boolean;
+  on_when_dark?: boolean;
   bright_minutes?: number;
   min_off_seconds?: number;
   brightness_min?: number;
