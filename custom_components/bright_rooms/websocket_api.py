@@ -17,7 +17,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.event import async_call_later
 
-from .const import CONF_AREA, DOMAIN, ROOM_DEFAULTS, SUBENTRY_ROOM
+from .const import CONF_NAME, DOMAIN, ROOM_DEFAULTS, SUBENTRY_ROOM
 from .engine import BrightRoomsEngine, update_signal
 from .schema import (
     normalize_room,
@@ -195,7 +195,11 @@ async def ws_schema(
     """The room form and the settings form for ha-form, with their values."""
     entry = _entry(hass)
     if "room_id" in msg:
-        values = room_config(dict(_room(entry, msg["room_id"]).data))
+        sub = _room(entry, msg["room_id"])
+        values = {
+            **room_config(dict(sub.data)),
+            CONF_NAME: room_title(hass, dict(sub.data), sub.title),
+        }
     else:
         values = dict(ROOM_DEFAULTS)
     connection.send_result(
@@ -236,7 +240,7 @@ async def ws_room_save(
     except vol.Invalid as err:
         connection.send_result(msg["id"], {"errors": _field_errors(err)})
         return
-    errors = validate_room(entry, form, current.subentry_id if current else None)
+    errors = validate_room(hass, entry, form, current.subentry_id if current else None)
     if errors:
         connection.send_result(msg["id"], {"errors": errors})
         return
@@ -247,13 +251,13 @@ async def ws_room_save(
             data=MappingProxyType(data),
             subentry_type=SUBENTRY_ROOM,
             title=title,
-            unique_id=data[CONF_AREA],
+            unique_id=None,
         )
         hass.config_entries.async_add_subentry(entry, sub)
         room_id = sub.subentry_id
     else:
         hass.config_entries.async_update_subentry(
-            entry, current, data=data, title=title, unique_id=data[CONF_AREA]
+            entry, current, data=data, title=title, unique_id=None
         )
         room_id = current.subentry_id
     connection.send_result(msg["id"], {"room_id": room_id})

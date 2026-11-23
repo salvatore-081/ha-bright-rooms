@@ -16,7 +16,7 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 
 from .const import (
-    CONF_AREA,
+    CONF_NAME,
     DOMAIN,
     ROOM_DEFAULTS,
     SETTINGS_DEFAULTS,
@@ -90,12 +90,11 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         """Add a room."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            errors = validate_room(self._get_entry(), user_input, None)
+            errors = validate_room(self.hass, self._get_entry(), user_input, None)
             if not errors:
                 return self.async_create_entry(
                     title=room_title(self.hass, user_input),
                     data=normalize_room(user_input),
-                    unique_id=user_input[CONF_AREA],
                 )
 
         return self.async_show_form(
@@ -113,20 +112,31 @@ class RoomSubentryFlow(ConfigSubentryFlow):
         subentry = self._get_reconfigure_subentry()
         errors: dict[str, str] = {}
         if user_input is not None:
-            errors = validate_room(self._get_entry(), user_input, subentry.subentry_id)
+            errors = validate_room(
+                self.hass, self._get_entry(), user_input, subentry.subentry_id
+            )
             if not errors:
                 return self.async_update_and_abort(
                     self._get_entry(),
                     subentry,
                     title=room_title(self.hass, user_input),
                     data=normalize_room(user_input),
-                    unique_id=user_input[CONF_AREA],
+                    # Rooms are told apart by name: several may share an area.
+                    unique_id=None,
                 )
 
         return self.async_show_form(
             step_id="reconfigure",
             data_schema=self.add_suggested_values_to_schema(
-                room_schema(), user_input or {**ROOM_DEFAULTS, **subentry.data}
+                room_schema(),
+                user_input
+                or {
+                    **ROOM_DEFAULTS,
+                    **subentry.data,
+                    CONF_NAME: room_title(
+                        self.hass, dict(subentry.data), subentry.title
+                    ),
+                },
             ),
             errors=errors,
         )

@@ -26,6 +26,7 @@ SETTINGS_DEFAULTS: Final[dict[str, float]] = {
 }
 
 # Room subentry
+CONF_NAME: Final = "name"
 CONF_AREA: Final = "area"
 CONF_PRESENCE_SENSORS: Final = "presence_sensors"
 CONF_ZONE_SENSORS: Final = "zone_sensors"

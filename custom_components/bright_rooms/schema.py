@@ -30,6 +30,7 @@ from .const import (
     CONF_LEARN_WEIGHT,
     CONF_LIGHTS,
     CONF_MIN_OFF_SECONDS,
+    CONF_NAME,
     CONF_OFF_WHEN_BRIGHT,
     CONF_ON_DELAY,
     CONF_ONLY_WHEN_DARK,
@@ -106,6 +107,7 @@ def room_schema() -> vol.Schema:
     """
     return vol.Schema(
         {
+            vol.Required(CONF_NAME): selector.TextSelector(),
             vol.Required(CONF_AREA): selector.AreaSelector(),
             vol.Optional(CONF_PRESENCE_SENSORS): SENSORS_SELECTOR,
             vol.Optional(CONF_ZONE_SENSORS): SENSORS_SELECTOR,
@@ -140,10 +142,14 @@ def room_keys() -> list[str]:
     return [str(key) for key in room_schema().schema]
 
 
-def room_title(hass: HomeAssistant, data: dict[str, Any]) -> str:
-    """A room is named after its area."""
-    area = ar.async_get(hass).async_get_area(data[CONF_AREA])
-    return area.name if area else data[CONF_AREA]
+def room_title(
+    hass: HomeAssistant, data: dict[str, Any], fallback: str | None = None
+) -> str:
+    """A room's name; rooms saved without one are named after their area."""
+    if name := str(data.get(CONF_NAME) or "").strip():
+        return name
+    area = ar.async_get(hass).async_get_area(data.get(CONF_AREA) or "")
+    return area.name if area else fallback or str(data.get(CONF_AREA) or "")
 
 
 def _clean(data: dict[str, Any]) -> dict[str, Any]:
@@ -154,6 +160,8 @@ def _clean(data: dict[str, Any]) -> dict[str, Any]:
             continue
         if key in INT_FIELDS and isinstance(value, float) and value.is_integer():
             value = int(value)
+        if key == CONF_NAME and isinstance(value, str):
+            value = value.strip()
         out[key] = value
     return out
 
@@ -177,17 +185,22 @@ def room_config(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def validate_room(
-    entry: ConfigEntry, data: dict[str, Any], current: str | None
+    hass: HomeAssistant, entry: ConfigEntry, data: dict[str, Any], current: str | None
 ) -> dict[str, str]:
-    """Errors by field (translation keys), empty when the room is valid."""
+    """Errors by field (translation keys), empty when the room is valid.
+
+    Several rooms may share an area (two light groups with their own
+    sensors); names must differ, ignoring case.
+    """
     errors: dict[str, str] = {}
     data = normalize_room(data)
+    name = room_title(hass, data).casefold()
     other_lights: set[str] = set()
     for sub in entry.subentries.values():
         if sub.subentry_type != SUBENTRY_ROOM or sub.subentry_id == current:
             continue
-        if sub.data.get(CONF_AREA) == data.get(CONF_AREA):
-            errors[CONF_AREA] = "area_taken"
+        if room_title(hass, dict(sub.data), sub.title).casefold() == name:
+            errors[CONF_NAME] = "name_taken"
         other_lights.update(sub.data.get(CONF_LIGHTS) or [])
     if not data.get(CONF_PRESENCE_SENSORS):
         errors[CONF_PRESENCE_SENSORS] = "no_presence"

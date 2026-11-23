@@ -16,6 +16,7 @@ from custom_components.bright_rooms.const import (
     CONF_EMPTY_WAIT,
     CONF_LEARN_WEIGHT,
     CONF_LIGHTS,
+    CONF_NAME,
     CONF_PRESENCE_SENSORS,
     CONF_SETTLE_SECONDS,
     DOMAIN,
@@ -47,9 +48,10 @@ async def test_create_single_entry(hass: HomeAssistant) -> None:
     assert result["reason"] == "single_instance_allowed"
 
 
-def _room(area_id: str, **extra):
+def _room(area_id: str, name: str = "Kitchen", **extra):
     return {
         **ROOM_DEFAULTS,
+        CONF_NAME: name,
         CONF_AREA: area_id,
         CONF_PRESENCE_SENSORS: ["binary_sensor.a"],
         CONF_LIGHTS: ["light.a"],
@@ -89,18 +91,23 @@ async def test_room_subentry(hass: HomeAssistant) -> None:
         CONF_BRIGHTNESS_FULL_LUX: "brightness_lux_order",
     }
 
-    result = await add(_room(kitchen.id))
+    result = await add(_room(kitchen.id, name=" Cooktop "))
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["title"] == "Kitchen"
+    assert result["title"] == "Cooktop"
     subentry = next(iter(entry.subentries.values()))
-    assert subentry.unique_id == kitchen.id
+    assert subentry.unique_id is None
+    assert subentry.data[CONF_NAME] == "Cooktop"
     assert subentry.data[CONF_EMPTY_WAIT] == 30
     assert isinstance(subentry.data[CONF_EMPTY_WAIT], int)
 
-    result = await add(_room(kitchen.id, **{CONF_LIGHTS: ["light.b"]}))
-    assert result["errors"] == {CONF_AREA: "area_taken"}
-    result = await add(_room(hall.id))
+    # Names must differ, ignoring case; areas may be shared.
+    result = await add(_room(hall.id, name="COOKTOP", **{CONF_LIGHTS: ["light.b"]}))
+    assert result["errors"] == {CONF_NAME: "name_taken"}
+    result = await add(_room(kitchen.id, name="Table"))
     assert result["errors"] == {CONF_LIGHTS: "light_in_other_room"}
+    result = await add(_room(kitchen.id, name="Table", **{CONF_LIGHTS: ["light.b"]}))
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert sorted(s.title for s in entry.subentries.values()) == ["Cooktop", "Table"]
 
     # Edit the room: its own lights are not "in another room".
     result = await hass.config_entries.subentries.async_init(
@@ -109,11 +116,12 @@ async def test_room_subentry(hass: HomeAssistant) -> None:
     )
     assert result["step_id"] == "reconfigure"
     result = await hass.config_entries.subentries.async_configure(
-        result["flow_id"], _room(kitchen.id, **{CONF_EMPTY_WAIT: 60.0})
+        result["flow_id"], _room(kitchen.id, name="cooktop", **{CONF_EMPTY_WAIT: 60.0})
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
     assert entry.subentries[subentry.subentry_id].data[CONF_EMPTY_WAIT] == 60
+    assert entry.subentries[subentry.subentry_id].title == "cooktop"
 
 
 async def test_brightness_lux_equal_is_an_error(hass: HomeAssistant) -> None:

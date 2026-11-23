@@ -39,7 +39,7 @@
         "reconfigure_successful": "Stanza aggiornata."
       },
       "error": {
-        "area_taken": "Quest'area ha già una stanza.",
+        "name_taken": "C'è già una stanza con questo nome.",
         "no_presence": "Scegli almeno un sensore di presenza.",
         "no_lights": "Scegli almeno una luce.",
         "bright_not_above_dark": "Deve essere più alta della soglia del buio.",
@@ -50,6 +50,7 @@
         "user": {
           "title": "Aggiungi stanza",
           "data": {
+            "name": "Nome",
             "area": "Area",
             "presence_sensors": "Sensori di presenza",
             "zone_sensors": "Sensori di presenza delle aree vicine",
@@ -73,6 +74,8 @@
             "transition": "Transizione allo spegnimento"
           },
           "data_description": {
+            "name": "Compare nel pannello e sul dispositivo della stanza. Più stanze possono stare nella stessa area, per esempio le luci del piano cottura e la lampada del tavolo di una cucina, ognuna con il suo sensore di presenza.",
+            "area": "L'area in cui va il dispositivo della stanza.",
             "presence_sensors": "La stanza è occupata finché almeno uno è acceso.",
             "zone_sensors": "Se uno di questi rileva qualcuno, lo spegnimento aspetta di più: spesso ci si sposta fra aree vicine e si torna.",
             "lights": "Le luci comandate da Bright Rooms. Una luce può stare in una sola stanza.",
@@ -88,11 +91,12 @@
             "dim_percent": "Prima di spegnere, le luci dimmerabili si abbassano a questa parte della loro luminosità come avviso (100 % = nessun avviso). Se qualcuno torna, riprendono la luminosità di prima.",
             "transition": "Solo luci dimmerabili."
           },
-          "description": "Una stanza per area. L'apporto di ogni luce si impara da solo, oppure si imposta nel pannello Bright Rooms."
+          "description": "Una stanza è un gruppo di luci comandato dai suoi sensori di presenza; più stanze possono stare nella stessa area. L'apporto di ogni luce si impara da solo, oppure si imposta nel pannello Bright Rooms."
         },
         "reconfigure": {
           "title": "Modifica stanza",
           "data": {
+            "name": "Nome",
             "area": "Area",
             "presence_sensors": "Sensori di presenza",
             "zone_sensors": "Sensori di presenza delle aree vicine",
@@ -116,6 +120,8 @@
             "transition": "Transizione allo spegnimento"
           },
           "data_description": {
+            "name": "Compare nel pannello e sul dispositivo della stanza. Più stanze possono stare nella stessa area, per esempio le luci del piano cottura e la lampada del tavolo di una cucina, ognuna con il suo sensore di presenza.",
+            "area": "L'area in cui va il dispositivo della stanza.",
             "presence_sensors": "La stanza è occupata finché almeno uno è acceso.",
             "zone_sensors": "Se uno di questi rileva qualcuno, lo spegnimento aspetta di più: spesso ci si sposta fra aree vicine e si torna.",
             "lights": "Le luci comandate da Bright Rooms. Una luce può stare in una sola stanza.",

@@ -27,7 +27,7 @@ export const formCallbacks = (t: Localize): FormCallbacks => ({
     translated(t, field.type === "expandable" ? `section.${field.name}` : `field.${field.name}`) ??
     humanize(field.name),
   computeHelper: (field) => translated(t, `help.${field.name}`),
-  // ha-form passes our error codes (area_taken, no_lights, ...).
+  // ha-form passes our error codes (name_taken, no_lights, ...).
   computeError: (error) => translated(t, `error.${error}`) ?? error,
   localizeValue: (key) => translated(t, `selector.${key}`) ?? key.split(".").pop() ?? key,
 });
@@ -69,7 +69,7 @@ export interface FieldGroup {
 
 /** Groups of the room form by field name, when the integration sends no sections. */
 export const ROOM_GROUPS: { key: string; icon: string; fields: string[] }[] = [
-  { key: "area", icon: "mdi:floor-plan", fields: ["area"] },
+  { key: "area", icon: "mdi:floor-plan", fields: ["name", "area"] },
   {
     key: "presence",
     icon: "mdi:motion-sensor",

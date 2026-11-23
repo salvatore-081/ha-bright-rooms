@@ -20,6 +20,7 @@ from custom_components.bright_rooms.const import (
     CONF_BRIGHT_ABOVE,
     CONF_EMPTY_WAIT,
     CONF_LIGHTS,
+    CONF_NAME,
     CONF_PRESENCE_SENSORS,
     CONF_SETTLE_SECONDS,
     SUBENTRY_ROOM,
@@ -113,25 +114,37 @@ async def test_rooms_and_subscribe(
     assert room["lights"][0]["brightness"] == 255
 
 
-async def test_rooms_in_area_name_order(
+async def test_rooms_sharing_an_area_in_name_order(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_ws_client
 ) -> None:
+    """The kitchen room was saved without a name: it is named after its area."""
     client = await hass_ws_client(hass)
-    _entry, _ = await make(hass, freezer)
-    bath = ar.async_get(hass).async_create("Bathroom")
+    entry, _ = await make(hass, freezer)
+    area_id = kitchen(entry).cfg.area_id
+    table = {
+        CONF_NAME: "Dining table",
+        CONF_AREA: area_id,
+        CONF_PRESENCE_SENSORS: ["binary_sensor.table"],
+        CONF_LIGHTS: ["light.table_lamp"],
+    }
     res = await _call(
-        client,
-        type="bright_rooms/room/save",
-        data={
-            CONF_AREA: bath.id,
-            CONF_PRESENCE_SENSORS: ["binary_sensor.b"],
-            CONF_LIGHTS: ["light.b"],
-        },
+        client, type="bright_rooms/room/save", data={**table, CONF_NAME: "kitchen"}
     )
+    assert res["result"]["errors"] == {CONF_NAME: "name_taken"}
+    res = await _call(client, type="bright_rooms/room/save", data=table)
     assert "room_id" in res["result"]
     await hass.async_block_till_done()
     res = await _call(client, type="bright_rooms/rooms")
-    assert [r["name"] for r in res["result"]["rooms"]] == ["Bathroom", "Kitchen"]
+    rooms = res["result"]["rooms"]
+    assert [r["name"] for r in rooms] == ["Dining table", "Kitchen"]
+    assert [r["area_id"] for r in rooms] == [area_id, area_id]
+    assert rooms[0]["config"][CONF_NAME] == "Dining table"
+    assert rooms[1]["config"][CONF_NAME] == "Kitchen"
+    device = dr.async_get(hass).async_get_device_by_identifier(
+        ("bright_rooms", rooms[0]["id"]), entry.entry_id
+    )
+    assert device.name == "Bright Rooms Dining table"
+    assert device.area_id == area_id
 
 
 async def test_not_set_up_and_not_loaded(
@@ -173,6 +186,7 @@ async def test_schema(
     res = await _call(client, type="bright_rooms/schema")
     result = res["result"]
     assert [f["name"] for f in result["schema"]] == [
+        "name",
         "area",
         "presence_sensors",
         "zone_sensors",
@@ -213,6 +227,7 @@ async def test_schema(
     values = res["result"]["values"]
     assert values[CONF_LIGHTS] == [CEILING, STRIP]
     assert values["illuminance_sensor"] == LUX
+    assert values[CONF_NAME] == "Kitchen"  # saved without a name: the area's
 
     res = await _call(client, type="bright_rooms/schema", room_id="nope")
     assert res["error"]["code"] == "not_found"
@@ -229,7 +244,12 @@ async def test_room_save_and_delete(
     res = await _call(
         client,
         type="bright_rooms/room/save",
-        data={CONF_AREA: hall.id, CONF_LIGHTS: [CEILING], CONF_BRIGHT_ABOVE: 10},
+        data={
+            CONF_NAME: "Hall",
+            CONF_AREA: hall.id,
+            CONF_LIGHTS: [CEILING],
+            CONF_BRIGHT_ABOVE: 10,
+        },
     )
     assert res["result"]["errors"] == {
         CONF_PRESENCE_SENSORS: "no_presence",
@@ -239,13 +259,14 @@ async def test_room_save_and_delete(
     res = await _call(
         client,
         type="bright_rooms/room/save",
-        data={CONF_AREA: hall.id, CONF_EMPTY_WAIT: "soon"},
+        data={CONF_NAME: "Hall", CONF_AREA: hall.id, CONF_EMPTY_WAIT: "soon"},
     )
     assert res["result"]["errors"] == {CONF_EMPTY_WAIT: "invalid"}
 
     # Edit: cleared optional fields come as null and go away; the rest is kept.
     data = {
         **entry.subentries[room_id].data,
+        CONF_NAME: "Cooktop",
         "illuminance_sensor": None,
         CONF_EMPTY_WAIT: 45,
     }
@@ -256,6 +277,8 @@ async def test_room_save_and_delete(
     assert saved[CONF_EMPTY_WAIT] == 45
     assert "illuminance_sensor" not in saved
     assert kitchen(entry).cfg.illuminance_sensor is None  # reloaded
+    assert entry.subentries[room_id].title == "Cooktop"
+    assert entry.subentries[room_id].unique_id is None
 
     res = await _call(client, type="bright_rooms/room/delete", room_id=room_id)
     assert res["success"]
@@ -464,4 +487,4 @@ def test_versions_match() -> None:
         (root / "custom_components/bright_rooms/manifest.json").read_text()
     )
     frontend = json.loads((root / "frontend/package.json").read_text())
-    assert manifest["version"] == frontend["version"] == "0.1.0"
+    assert manifest["version"] == frontend["version"] == "0.1.1"

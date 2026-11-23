@@ -12,7 +12,11 @@ This file is the contract between the backend (`custom_components/bright_rooms`,
 
 ## Concepts
 
-- **Room**: a subentry (type `room`), one per Home Assistant area (unique id = area id).
+- **Room**: a subentry (type `room`): a group of lights switched by its own presence sensors, with a unique
+  name, in a Home Assistant area. Several rooms may share an area (a kitchen with the cooktop lights on the
+  kitchen sensor and the table lamp on the table sensor). Subentries have no unique id; the subentry title,
+  the device name ("Bright Rooms ‹name›") and the snapshot `name` are the room's name. Rooms saved without a
+  name (0.1.0) are named after their area.
 - **Occupied**: at least one of the room's presence sensors is `on`. Unavailable/unknown sensors are
   ignored; if all are unavailable the room's occupancy is `None` and nothing is started or stopped by it.
 - **Zone**: presence sensors of nearby areas. While a zone sensor is `on`, turning off waits longer
@@ -36,7 +40,8 @@ This file is the contract between the backend (`custom_components/bright_rooms`,
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
-| `area` | area id | required | The room |
+| `name` | text | required | Name of the room, unique ignoring case (first field of the form) |
+| `area` | area id | required | Where the room's device goes; may be shared by several rooms |
 | `presence_sensors` | list of binary_sensor | required (≥1) | Union = occupied |
 | `zone_sensors` | list of binary_sensor | `[]` | Nearby areas, extend the wait before turning off |
 | `lights` | list of light | required (≥1) | Lights switched by Bright Rooms |
@@ -58,7 +63,7 @@ This file is the contract between the backend (`custom_components/bright_rooms`,
 | `dim_wait` | s, 0–600 | 10 | Time dimmed before turning off (the warning) |
 | `transition` | s, 0–30 | 3 | Transition of the final turn-off of dimmable lights |
 
-Validation errors (keys for translations): `area_taken`, `no_presence`, `no_lights`, `bright_not_above_dark`,
+Validation errors (keys for translations): `name_taken` (another room has the same name, ignoring case), `no_presence`, `no_lights`, `bright_not_above_dark`,
 `brightness_lux_order` (`brightness_full_lux` must be > `brightness_dark_lux`), `light_in_other_room` (a light
 can belong to one room only).
 
@@ -175,7 +180,7 @@ Types are in `frontend/src/types.ts`; snake_case keys as below.
 
   ```
   Snapshot = { entry_id: str, settings: {settle_seconds, learn_ambient_max, learn_min_previous, learn_weight},
-               rooms: RoomSnapshot[] }   // rooms in area name order
+               rooms: RoomSnapshot[] }   // rooms in name order
   RoomSnapshot = {
     id: subentry_id, name: str, area_id: str, enabled: bool, config: {room settings},
     status: "disabled"|"off"|"on"|"waiting"|"dimmed",
@@ -191,7 +196,7 @@ Types are in `frontend/src/types.ts`; snake_case keys as below.
   ```
 - `bright_rooms/schema` `{room_id?}` → one result `{schema: FormField[], values: {}, settings_schema:
   FormField[], settings: {}}`: the room form (serialized with `probatio.to_field_list` like Tidy Rooms) and
-  the global settings form. Without sections the panel groups the room fields by name (area; presence;
+  the global settings form. Without sections the panel groups the room fields by name (name and area; presence;
   lights; daylight; brightness; turning off; unknown fields last). Sections (`expandable`) are allowed: the
   panel then draws the schema as it is, titles from the `section.<name>` strings (`area`, `presence`,
   `lights`, `daylight`, `brightness`, `off`), and nests the flat field errors under the section name.
@@ -226,6 +231,6 @@ opens the panel room page. Visual editor (title, rooms).
 As Tidy Rooms: `hacs.json` with `zip_release` and `filename: bright_rooms.zip`, minimum Home Assistant
 `2026.10.0`; workflows Tests (pytest with `pytest-homeassistant-custom-component`, frontend lint, typecheck,
 vitest, build), Validate (HACS action, hassfest), Release (checks the tag against `manifest.json` and
-`frontend/package.json`, builds, uploads the zip). Version 0.1.0. `manifest.json`: `single_config_entry`
+`frontend/package.json`, builds, uploads the zip). Version 0.1.1. `manifest.json`: `single_config_entry`
 true, `integration_type` "service", `iot_class` "calculated", `dependencies` ["light"],
 `after_dependencies` ["frontend", "http", "websocket_api"]. Brand icon in `custom_components/bright_rooms/brand`.

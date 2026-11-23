@@ -28,6 +28,8 @@ export interface LastAction {
 
 /** The settings of a room (subentry data), as in DESIGN.md § Room settings. */
 export interface RoomConfig {
+  /** The room's name; several rooms may share an area. */
+  name: string;
   area: string;
   presence_sensors: string[];
   zone_sensors?: string[];

@@ -28,7 +28,7 @@ Most presence automations either ignore daylight or are fooled by their own lamp
 Bright Rooms adds a **Bright Rooms** panel to the sidebar (administrators only), in English and Italian:
 
 - **Overview**: a tile per room with its status, presence, ambient light with the dark and bright thresholds, the lights and their brightness, a countdown to the next step and the last action with its reason.
-- **Rooms**: add, edit and delete rooms. A room page shows its live status, its settings, the **contributions** of its lights (edit a value, or measure it again) and the **settings of its presence sensors** (sensitivity, absence delay, ranges, calibration: the sensors' own controls, shown in place).
+- **Rooms**: add, edit and delete rooms. A room is a group of lights with its own presence sensors: several rooms can share an area, for example the cooktop lights and the table lamp of a kitchen, each with its own sensor. A room page shows its live status, its settings, the **contributions** of its lights (edit a value, or measure it again) and the **settings of its presence sensors** (sensitivity, absence delay, ranges, calibration: the sensors' own controls, shown in place).
 - **Settings**: settling time and how contributions are learned.
 
 ## Card
@@ -58,7 +58,7 @@ Download `bright_rooms.zip` from the latest release, unpack it into `config/cust
 ## Configuration
 
 1. **Settings → Devices & services → Add integration → Bright Rooms**.
-2. In the **Bright Rooms** panel, **Rooms → Add room** for each room: area, presence sensors, lights, illuminance sensor, and optionally the presence sensors of nearby areas and other lights the illuminance sensor sees (a lamp in the next room through an open door).
+2. In the **Bright Rooms** panel, **Rooms → Add room** for each room: a name, its area, presence sensors, lights, illuminance sensor, and optionally the presence sensors of nearby areas and other lights the illuminance sensor sees (a lamp in the next room through an open door).
 3. Let Bright Rooms learn the contributions over a few evenings. In a room with several lights, switch each one on and off by itself once with the room dark (two unknown lights switched together cannot be told apart); or type the values in the room page.
 
 Rooms and settings can also be managed from the integration page (**Add room**, **Configure**): both edit the same configuration.
@@ -79,7 +79,7 @@ Main room settings:
 
 ## Entities
 
-For each room (one device per room, in the room's area):
+For each room (one device per room, "Bright Rooms ‹name›", in the room's area):
 
 | Entity | Description |
 |---|---|

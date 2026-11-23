@@ -38,7 +38,6 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
@@ -74,6 +73,7 @@ from .const import (
     CONF_LEARN_WEIGHT,
     CONF_LIGHTS,
     CONF_MIN_OFF_SECONDS,
+    CONF_NAME,
     CONF_OFF_WHEN_BRIGHT,
     CONF_ON_DELAY,
     CONF_ONLY_WHEN_DARK,
@@ -94,7 +94,7 @@ from .const import (
     Reason,
     Status,
 )
-from .schema import room_config, settings
+from .schema import room_config, room_title, settings
 from .store import BrightRoomsStore, Contribution
 
 _LOGGER = logging.getLogger(__name__)
@@ -910,9 +910,8 @@ class RoomEngine:
 
     @property
     def name(self) -> str:
-        """The area's name (the subentry title if the area is gone)."""
-        area = ar.async_get(self.hass).async_get_area(self.cfg.area_id)
-        return area.name if area else self.title
+        """The room's name (its area's for rooms saved without one)."""
+        return room_title(self.hass, self.data, self.title)
 
     def sensor_entities(self) -> list[str]:
         """Settings of the presence sensors' devices (sensitivity, delays…)."""
@@ -959,7 +958,7 @@ class RoomEngine:
             "name": self.name,
             "area_id": self.cfg.area_id,
             "enabled": self.enabled,
-            "config": room_config(self.data),
+            "config": {**room_config(self.data), CONF_NAME: self.name},
             "status": self.status.value,
             "occupied": self.occupied,
             "zone_occupied": self.zone_occupied,

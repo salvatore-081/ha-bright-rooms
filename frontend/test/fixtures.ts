@@ -22,6 +22,7 @@ export const room = (over: Partial<RoomSnapshot> = {}): RoomSnapshot => ({
   area_id: "cucina",
   enabled: true,
   config: {
+    name: "Cucina",
     area: "cucina",
     presence_sensors: ["binary_sensor.cucina_presenza"],
     zone_sensors: ["binary_sensor.salone_presenza"],

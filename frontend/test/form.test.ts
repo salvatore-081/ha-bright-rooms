@@ -32,10 +32,12 @@ describe("form callbacks", () => {
 describe("room form", () => {
   it("groups the fields by name, the unknown ones last", () => {
     const groups = groupFields(
-      ["area", "lights", "dark_below", "transition", "presence_sensors", "mystery"].map(field),
+      ["name", "area", "lights", "dark_below", "transition", "presence_sensors", "mystery"].map(
+        field,
+      ),
     );
     expect(groups.map((g) => [g.key, g.schema.map((f) => f.name)])).toEqual([
-      ["area", ["area"]],
+      ["area", ["name", "area"]],
       ["presence", ["presence_sensors"]],
       ["lights", ["lights"]],
       ["daylight", ["dark_below"]],
@@ -50,8 +52,8 @@ describe("room form", () => {
       { name: "off", type: "expandable", schema: [field("dim_percent"), field("dim_wait")] },
     ];
     expect(groupFields(schema)).toEqual([{ key: "room", icon: "mdi:tune-variant", schema }]);
-    expect(nestErrors(schema, { area: "area_taken", dim_wait: "invalid" })).toEqual({
-      area: "area_taken",
+    expect(nestErrors(schema, { name: "name_taken", dim_wait: "invalid" })).toEqual({
+      name: "name_taken",
       off: { dim_wait: "invalid" },
     });
     const flat: FormField[] = [{ ...schema[1], flatten: true }];

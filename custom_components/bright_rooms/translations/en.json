@@ -39,7 +39,7 @@
         "reconfigure_successful": "Room updated."
       },
       "error": {
-        "area_taken": "This area already has a room.",
+        "name_taken": "Another room already has this name.",
         "no_presence": "Choose at least one presence sensor.",
         "no_lights": "Choose at least one light.",
         "bright_not_above_dark": "Must be higher than the dark threshold.",
@@ -50,6 +50,7 @@
         "user": {
           "title": "Add room",
           "data": {
+            "name": "Name",
             "area": "Area",
             "presence_sensors": "Presence sensors",
             "zone_sensors": "Presence sensors of nearby areas",
@@ -73,6 +74,8 @@
             "transition": "Transition when turning off"
           },
           "data_description": {
+            "name": "Shown in the panel and on the room's device. Several rooms can share an area, for example the cooktop lights and the table lamp of a kitchen, each with its own presence sensor.",
+            "area": "Where the room's device goes.",
             "presence_sensors": "The room is occupied while at least one of them is on.",
             "zone_sensors": "While one of them is on, turning off waits longer: people often move between nearby areas and come back.",
             "lights": "The lights Bright Rooms switches. A light can belong to one room only.",
@@ -88,11 +91,12 @@
             "dim_percent": "Dimmable lights are dimmed to this share of their brightness as a warning before turning off (100 % = no warning). If someone comes back, they return to their brightness.",
             "transition": "Dimmable lights only."
           },
-          "description": "One room per area. The contribution of each light is learned by itself, or can be set in the Bright Rooms panel."
+          "description": "A room is a group of lights switched by its own presence sensors; several rooms can share an area. The contribution of each light is learned by itself, or can be set in the Bright Rooms panel."
         },
         "reconfigure": {
           "title": "Edit room",
           "data": {
+            "name": "Name",
             "area": "Area",
             "presence_sensors": "Presence sensors",
             "zone_sensors": "Presence sensors of nearby areas",
@@ -116,6 +120,8 @@
             "transition": "Transition when turning off"
           },
           "data_description": {
+            "name": "Shown in the panel and on the room's device. Several rooms can share an area, for example the cooktop lights and the table lamp of a kitchen, each with its own presence sensor.",
+            "area": "Where the room's device goes.",
             "presence_sensors": "The room is occupied while at least one of them is on.",
             "zone_sensors": "While one of them is on, turning off waits longer: people often move between nearby areas and come back.",
             "lights": "The lights Bright Rooms switches. A light can belong to one room only.",
