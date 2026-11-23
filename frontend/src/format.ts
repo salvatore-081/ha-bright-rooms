@@ -233,12 +233,13 @@ export const deadlineTemplate = (room: RoomSnapshot, t: Localize): string | null
 export const countdownText = (template: string, deadline: string, now: Date): string =>
   template.replaceAll("{time}", formatCountdown(msUntil(deadline, now) ?? 0));
 
-/** "Turned on: someone came in and it was dark". */
+/** "Turned on: someone came in and it was dark"; a failure adds its detail. */
 export const lastActionText = (last: LastAction, t: Localize): string => {
   const action = t(`action.${last.action}`);
   const key = `reason.${last.reason}`;
   const reason = t(key);
-  return reason === key ? `${action}: ${last.reason}` : `${action}: ${reason}`;
+  const text = reason === key ? `${action}: ${last.reason}` : `${action}: ${reason}`;
+  return last.detail ? `${text} (${last.detail})` : text;
 };
 
 export const LAST_ACTION_ICONS: Record<string, string> = {
@@ -247,4 +248,5 @@ export const LAST_ACTION_ICONS: Record<string, string> = {
   dimmed: "mdi:lightbulb-on-30",
   restored: "mdi:lightbulb-on-outline",
   skipped_on: "mdi:weather-sunny",
+  failed: "mdi:alert-circle-outline",
 };

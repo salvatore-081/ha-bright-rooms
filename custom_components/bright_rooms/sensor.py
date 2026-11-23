@@ -83,6 +83,7 @@ class StatusSensor(BrightRoomsRoomEntity, SensorEntity):
             "last_action": last["action"] if last else None,
             "reason": last["reason"] if last else None,
             "at": last["at"] if last else None,
+            "detail": last["detail"] if last else None,
             "deadline": deadline.isoformat() if deadline else None,
         }
 

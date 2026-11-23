@@ -9,6 +9,7 @@ from freezegun.api import FrozenDateTimeFactory
 from homeassistant.config_entries import ConfigEntry, ConfigSubentryData
 from homeassistant.const import ATTR_ENTITY_ID
 from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import area_registry as ar
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
@@ -57,14 +58,21 @@ class FakeLights:
         """Register the services (after setup: they replace the light component's)."""
         self.hass = hass
         self.calls: list[ServiceCall] = []
+        self.failures = 0  # the next calls that raise (and do nothing)
+        self.deaf: set[str] = set()  # lights that ignore commands
         hass.services.async_register("light", "turn_on", self._handle)
         hass.services.async_register("light", "turn_off", self._handle)
 
     @callback
     def _handle(self, call: ServiceCall) -> None:
         self.calls.append(call)
+        if self.failures:
+            self.failures -= 1
+            raise HomeAssistantError("Device communication error")
         ids = call.data[ATTR_ENTITY_ID]
         for entity_id in [ids] if isinstance(ids, str) else ids:
+            if entity_id in self.deaf:
+                continue
             old = self.hass.states.get(entity_id)
             attrs = dict(old.attributes) if old else {}
             if call.service == "turn_off":

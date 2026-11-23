@@ -180,7 +180,8 @@
               "turned_off": "Spente",
               "dimmed": "Abbassate",
               "restored": "Luminosità ripristinata",
-              "skipped_on": "Non accese"
+              "skipped_on": "Non accese",
+              "failed": "Comando non riuscito"
             }
           },
           "reason": {
@@ -189,6 +190,7 @@
               "presence_dark": "Presenza al buio",
               "presence_always": "Presenza",
               "became_dark": "È diventato buio",
+              "light_back": "Luce tornata disponibile",
               "bright": "C'è abbastanza luce",
               "empty": "Stanza vuota",
               "zone_timeout": "Stanza vuota, aree vicine ancora occupate",
@@ -201,6 +203,9 @@
           },
           "at": {
             "name": "Alle"
+          },
+          "detail": {
+            "name": "Dettaglio"
           },
           "deadline": {
             "name": "Prossimo passo"

@@ -71,6 +71,7 @@ async def test_rooms_and_subscribe(
         True,
     )
     assert room["deadline"] is None and room["last_action"] is None
+    assert room["goal"] is None
     assert room["config"][CONF_PRESENCE_SENSORS] == [PRESENCE]
     assert room["config"]["illuminance_sensor"] == LUX
     assert room["config"]["other_lights"] == []
@@ -488,4 +489,4 @@ def test_versions_match() -> None:
         (root / "custom_components/bright_rooms/manifest.json").read_text()
     )
     frontend = json.loads((root / "frontend/package.json").read_text())
-    assert manifest["version"] == frontend["version"] == "0.1.2"
+    assert manifest["version"] == frontend["version"] == "0.1.3"

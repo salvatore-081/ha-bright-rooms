@@ -194,6 +194,10 @@ export class BrRoomTile extends LitElement {
         color: var(--br-text);
         font-weight: 500;
       }
+      .last.failed {
+        color: var(--br-warning);
+        font-weight: 500;
+      }
     `,
   ];
 
@@ -287,7 +291,7 @@ export class BrRoomTile extends LitElement {
                   </div>`
                 : nothing
             }
-            <div class="last">
+            <div class="last ${r.last_action?.action === "failed" ? "failed" : ""}">
               ${
                 r.last_action
                   ? html`<ha-icon

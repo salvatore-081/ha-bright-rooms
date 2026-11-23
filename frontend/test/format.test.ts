@@ -136,6 +136,20 @@ describe("status and reasons", () => {
         en,
       ),
     ).toBe("Turned off: new_reason");
+    expect(
+      lastActionText(
+        {
+          action: "failed",
+          reason: "presence_dark",
+          at: NOW.toISOString(),
+          detail: "Device communication error",
+        },
+        it_,
+      ),
+    ).toBe("Comando non riuscito: è entrato qualcuno ed era buio (Device communication error)");
+    expect(
+      lastActionText({ action: "turned_on", reason: "light_back", at: NOW.toISOString() }, en),
+    ).toBe("Turned on: the light became available again");
   });
 
   it("describes presence in the room and nearby", () => {

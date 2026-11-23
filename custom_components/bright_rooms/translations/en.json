@@ -180,7 +180,8 @@
               "turned_off": "Turned off",
               "dimmed": "Dimmed",
               "restored": "Brightness restored",
-              "skipped_on": "Not turned on"
+              "skipped_on": "Not turned on",
+              "failed": "Command failed"
             }
           },
           "reason": {
@@ -189,6 +190,7 @@
               "presence_dark": "Presence in the dark",
               "presence_always": "Presence",
               "became_dark": "It became dark",
+              "light_back": "Light available again",
               "bright": "Bright enough",
               "empty": "Room empty",
               "zone_timeout": "Room empty, nearby areas still occupied",
@@ -201,6 +203,9 @@
           },
           "at": {
             "name": "At"
+          },
+          "detail": {
+            "name": "Detail"
           },
           "deadline": {
             "name": "Next step"

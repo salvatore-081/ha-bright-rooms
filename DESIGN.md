@@ -132,10 +132,38 @@ Status (`status` sensor, enum): `disabled` (switch off), `off` (lights off), `on
    hand once it is already dark stay off. Without `only_when_dark` the option is ignored (the lights were
    turned on at arrival). Rooms saved without the key take the default (true).
 
-Every action records `last_action` = `{action, reason, at}` with `action` in `turned_on`, `turned_off`,
-`dimmed`, `restored`, `skipped_on` and `reason` a key: `presence_dark`, `presence_always`, `became_dark`, `bright`,
-`empty`, `zone_timeout`, `presence_back`, `changed_by_someone_else`, `not_dark`, `lights_already_on`,
-`disabled`. `skipped_on` is recorded when presence arrives but the lights are not turned on (`not_dark`).
+6. **Goals and unreliable lights** (lights that drop their connection, commands that raise). Every turn-on
+   (`presence_dark`, `presence_always`, `became_dark`, `light_back`) sets the room's goal `on`, every final
+   turn-off (`empty`, `zone_timeout`, `bright`) the goal `off`.
+   - **Reached** when every room light is available and in the goal state: the goal is cleared.
+   - **Cleared** also when someone else changes a room light (their choice wins), when the room is disabled,
+     or when its reason stops holding: `on` when the room is no longer occupied, or with `only_when_dark`
+     when dark becomes `False`; `off` (empty) when the room is occupied again; `off` (`bright`) when dark
+     becomes `True` again.
+   - **Retries**: 10 s after each command the available lights not yet in the goal state get it again, up to
+     3 attempts in all, while the goal holds. A command that raises records `failed` (with the reason of the
+     attempted action and a `detail`, the error's message); a goal still not reached after the last attempt
+     records `failed` with detail `no response` (if nothing was recorded yet) and logs one warning, and the
+     goal is kept. When the goal is reached after a failure, the normal action is recorded with the original
+     reason.
+   - **Lights coming back** (unavailable/unknown → available): with a goal it does not match, the light gets
+     the goal (turn-on after `min_off_seconds` from its last change, brightness from the curve), recorded as
+     `turned_on`/`turned_off` with reason `light_back`. Without a goal, if the room is occupied and enabled,
+     dark is not `False` (with `only_when_dark`), every available light is off, nothing is pending and no
+     room light was turned off by someone else since the last arrival seen while running (at start: none
+     seen, so this does not apply), the lights are turned on as at arrival, reason `light_back` (an arrival
+     that happened while the light was unavailable).
+   - **Arrival with every light unavailable** sets the `on` goal (when dark allows it), completed when a
+     light comes back.
+   - **Ours or someone else's**: while a goal is set, a light change to the goal state counts as Bright
+     Rooms' own (a command that raised but took effect, a late report). A light that becomes available again
+     is never an on/off transition for learning.
+
+Every action records `last_action` = `{action, reason, at, detail}` with `action` in `turned_on`,
+`turned_off`, `dimmed`, `restored`, `skipped_on`, `failed` and `reason` a key: `presence_dark`,
+`presence_always`, `became_dark`, `light_back`, `bright`, `empty`, `zone_timeout`, `presence_back`,
+`changed_by_someone_else`, `not_dark`, `lights_already_on`, `disabled`. `detail` is null except for `failed`.
+`skipped_on` is recorded when presence arrives but the lights are not turned on (`not_dark`).
 `deadline`: ISO time of the next timed step (end of the wait, of the dimming, of the bright timer), or null.
 
 ### Details fixed by the implementation
@@ -163,7 +191,8 @@ Every action records `last_action` = `{action, reason, at}` with `action` in `tu
 - **Store** `bright_rooms.<entry_id>`: `{rooms: {<subentry_id>: {enabled, contributions: {<light>:
   {value, samples, updated}}}}}`; the Automatic switch is saved there too. Rooms and lights no longer
   configured are dropped at load.
-- **Status sensor attributes**: `last_action` is the action key, `reason` and `at` come from the same record.
+- **Status sensor attributes**: `last_action` is the action key; `reason`, `at` and `detail` come from the
+  same record.
 
 ## Entities (one device per room, in the room's area, `via_device` the entry's device)
 
@@ -195,7 +224,8 @@ Types are in `frontend/src/types.ts`; snake_case keys as below.
     status: "disabled"|"off"|"on"|"waiting"|"dimmed",
     occupied: bool|null, zone_occupied: bool, raw_lux: number|null, ambient: number|null,
     held: bool, dark: bool|null, deadline: iso|null,
-    last_action: {action, reason, at}|null,
+    last_action: {action, reason, at, detail: str|null}|null,
+    goal: "on"|"off"|null,         // what Bright Rooms is still trying to reach
     lights: [{entity_id, name, state, brightness: 0-255|null, dimmable: bool,
               contribution: number|null, samples: int, updated: iso|null}],
     sensor_entities: [entity_id]   // settings of the presence sensors: entities of the presence sensors'
@@ -240,6 +270,6 @@ opens the panel room page. Visual editor (title, rooms).
 As Tidy Rooms: `hacs.json` with `zip_release` and `filename: bright_rooms.zip`, minimum Home Assistant
 `2026.10.0`; workflows Tests (pytest with `pytest-homeassistant-custom-component`, frontend lint, typecheck,
 vitest, build), Validate (HACS action, hassfest), Release (checks the tag against `manifest.json` and
-`frontend/package.json`, builds, uploads the zip). Version 0.1.2. `manifest.json`: `single_config_entry`
+`frontend/package.json`, builds, uploads the zip). Version 0.1.3. `manifest.json`: `single_config_entry`
 true, `integration_type` "service", `iot_class` "calculated", `dependencies` ["light"],
 `after_dependencies` ["frontend", "http", "websocket_api"]. Brand icon in `custom_components/bright_rooms/brand`.

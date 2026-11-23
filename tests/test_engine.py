@@ -1075,3 +1075,248 @@ async def test_not_learned_without_a_reading(
     entry, _ = await make(hass, freezer)
     await _measure(hass, freezer, before=10, after="unavailable")
     assert kitchen(entry).contribution(CEILING).samples == 0
+
+
+# ------------------------------------------------------- unreliable lights
+
+
+def _detail(room) -> str | None:
+    return room.last_action.detail if room.last_action else None
+
+
+async def test_failed_call_retried(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(hass, freezer)
+    room = kitchen(entry)
+    lights.failures = 1  # the strip's call raises
+    await presence(hass, True)
+    await settle(hass)
+    assert hass.states.get(STRIP).state == "off"
+    assert hass.states.get(CEILING).state == "on"
+    assert _last(room) == ("failed", "presence_dark")
+    assert _detail(room) == "Device communication error"
+    assert room.snapshot()["goal"] == "on"
+    lights.clear()
+    await advance(hass, freezer, 10)
+    await settle(hass)
+    # Only the light that did not follow.
+    assert [c.data["entity_id"] for c in lights.calls] == [[STRIP]]
+    assert hass.states.get(STRIP).state == "on"
+    assert _last(room) == ("turned_on", "presence_dark")
+    assert _detail(room) is None
+    assert room.snapshot()["goal"] is None
+    await advance(hass, freezer, 60, step=10)
+    assert len(lights.calls) == 1
+
+
+async def test_light_that_does_not_follow(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, caplog
+) -> None:
+    entry, lights = await make(hass, freezer, lights=[STRIP])
+    room = kitchen(entry)
+    lights.deaf.add(STRIP)
+    await presence(hass, True)
+    await settle(hass)
+    await advance(hass, freezer, 60, step=5)
+    await settle(hass)
+    assert len(lights.calls) == 3  # three attempts, 10 s apart
+    assert _last(room) == ("failed", "presence_dark")
+    assert _detail(room) == "no response"
+    assert caplog.text.count("did not turn on after 3 attempts") == 1
+    assert room.snapshot()["goal"] == "on"  # kept for when it comes back
+
+
+async def test_failed_three_times_then_light_back(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(hass, freezer, lights=[STRIP])
+    room = kitchen(entry)
+    lights.failures = 3
+    await presence(hass, True)
+    await advance(hass, freezer, 60, step=5)
+    await settle(hass)
+    assert len(lights.calls) == 3
+    assert _last(room) == ("failed", "presence_dark")
+    hass.states.async_set(STRIP, "unavailable")
+    await hass.async_block_till_done()
+    set_light(hass, STRIP, "off")
+    await settle(hass)
+    assert len(lights.calls) == 4
+    assert hass.states.get(STRIP).state == "on"
+    assert _last(room) == ("turned_on", "light_back")
+    assert room.snapshot()["goal"] is None
+
+
+async def test_arrival_while_unavailable_then_light_back(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(hass, freezer, lights=[STRIP])
+    room = kitchen(entry)
+    hass.states.async_set(STRIP, "unavailable")
+    await presence(hass, True)
+    await settle(hass)
+    assert lights.calls == []
+    assert room.snapshot()["goal"] == "on"
+    await advance(hass, freezer, 4)
+    set_light(hass, STRIP, "off")
+    await settle(hass)
+    assert [c.service for c in lights.calls] == ["turn_on"]
+    assert _last(room) == ("turned_on", "light_back")
+
+
+async def test_light_back_respects_min_off_seconds(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    _entry, lights = await make(
+        hass, freezer, lights=[STRIP], **{CONF_MIN_OFF_SECONDS: 20}
+    )
+    hass.states.async_set(STRIP, "unavailable")
+    await presence(hass, True)
+    set_light(hass, STRIP, "off")
+    await advance(hass, freezer, 19)
+    assert lights.calls == []
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert len(lights.calls) == 1
+
+
+async def test_light_back_with_brightness_from_the_curve(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    _entry, lights = await make(
+        hass, freezer, lux="30", lights=[CEILING], **{CONF_BRIGHTNESS_MIN: 20}
+    )
+    hass.states.async_set(CEILING, "unavailable")
+    await presence(hass, True)
+    set_light(hass, CEILING, "off")
+    await settle(hass)
+    (call,) = lights.calls
+    assert call.data["brightness_pct"] == 28
+
+
+async def test_light_back_catches_up_on_an_arrival(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """No goal any more (it was reached), but the light restarted off."""
+    entry, lights = await _lights_on(hass, freezer, lights=[CEILING])
+    hass.states.async_set(CEILING, "unavailable")
+    await hass.async_block_till_done()
+    set_light(hass, CEILING, "off")
+    await settle(hass)
+    assert [c.service for c in lights.calls] == ["turn_on"]
+    assert _last(kitchen(entry)) == ("turned_on", "light_back")
+
+
+async def test_light_back_after_manual_off_stays_off(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    _entry, lights = await _lights_on(hass, freezer, lights=[CEILING])
+    set_light(hass, CEILING, "off")  # by hand, with someone in the room
+    await advance(hass, freezer, 30, step=10)
+    for _ in range(2):
+        hass.states.async_set(CEILING, "unavailable")
+        await hass.async_block_till_done()
+        set_light(hass, CEILING, "off")
+        await advance(hass, freezer, 30, step=10)
+    assert lights.calls == []
+
+
+async def test_turn_off_raised_but_executed(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await _lights_on(hass, freezer, lights=[CEILING], dim_percent=100)
+    room = kitchen(entry)
+    lights.failures = 1
+    await presence(hass, False)
+    await advance(hass, freezer, 30)
+    await settle(hass)
+    assert [c.service for c in lights.calls] == ["turn_off"]
+    assert _last(room) == ("failed", "empty")
+    assert hass.states.get(CEILING).state == "on"
+    await advance(hass, freezer, 5)
+    set_light(hass, CEILING, "off")  # reported late, without our context
+    await settle(hass)
+    assert _last(room) == ("turned_off", "empty")
+    assert room.snapshot()["goal"] is None
+    # Not taken for someone else's change: the next arrival turns on again.
+    await advance(hass, freezer, 60, step=10)
+    assert len(lights.calls) == 1
+    await presence(hass, True)
+    await settle(hass)
+    assert lights.calls[-1].service == "turn_on"
+
+
+async def test_goal_cleared_when_the_room_empties(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(hass, freezer, lights=[STRIP])
+    room = kitchen(entry)
+    hass.states.async_set(STRIP, "unavailable")
+    await presence(hass, True)
+    assert room.snapshot()["goal"] == "on"
+    await presence(hass, False)
+    assert room.snapshot()["goal"] is None
+    set_light(hass, STRIP, "off")
+    await advance(hass, freezer, 60, step=10)
+    assert lights.calls == []
+
+
+async def test_goal_cleared_when_disabled(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(hass, freezer, lights=[STRIP])
+    room = kitchen(entry)
+    hass.states.async_set(STRIP, "unavailable")
+    await presence(hass, True)
+    assert room.snapshot()["goal"] == "on"
+    room.set_enabled(False)
+    assert room.snapshot()["goal"] is None
+    set_light(hass, STRIP, "off")
+    await advance(hass, freezer, 30, step=10)
+    assert lights.calls == []
+
+
+async def test_goal_cleared_when_bright(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(hass, freezer)
+    room = kitchen(entry)
+    _learn(entry, CEILING, 100)
+    _learn(entry, STRIP, 50)
+    lights.deaf.add(STRIP)
+    await presence(hass, True)
+    await settle(hass)
+    await lux(hass, 110)
+    await advance(hass, freezer, 75, step=5)
+    assert (room.ambient, room.snapshot()["goal"]) == (10, "on")
+    await lux(hass, 500)
+    assert room.dark is False
+    assert room.snapshot()["goal"] is None
+
+
+async def test_goal_cleared_by_someone_else(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(hass, freezer)
+    lights.deaf.add(STRIP)
+    await presence(hass, True)
+    await settle(hass)
+    set_light(hass, CEILING, "off")  # by hand: their choice wins
+    await advance(hass, freezer, 60, step=10)
+    assert len(lights.calls) == 2  # no retries
+    assert kitchen(entry).snapshot()["goal"] is None
+
+
+async def test_bright_turn_off_goal_cleared_when_dark_again(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await _known(hass, freezer)
+    lights.deaf.update({CEILING, STRIP})
+    await lux(hass, 400)
+    await advance(hass, freezer, 600, step=30)
+    await settle(hass)
+    room = kitchen(entry)
+    assert room.snapshot()["goal"] == "off"
+    await lux(hass, 160)  # ambient 10: dark again
+    assert room.snapshot()["goal"] is None

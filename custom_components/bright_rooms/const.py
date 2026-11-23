@@ -81,6 +81,10 @@ LEARN_GROUP_SECONDS: Final = 2
 # After a start, an empty room with lights on is turned off once every
 # presence sensor has been available for this long.
 STARTUP_GRACE: Final = 30
+# A light command is checked this long after it is sent, and sent again to
+# the lights that did not follow, up to GOAL_ATTEMPTS times in all.
+GOAL_RETRY_SECONDS: Final = 10
+GOAL_ATTEMPTS: Final = 3
 
 
 class Status(StrEnum):
@@ -101,6 +105,7 @@ class Action(StrEnum):
     DIMMED = "dimmed"
     RESTORED = "restored"
     SKIPPED_ON = "skipped_on"
+    FAILED = "failed"
 
 
 class Reason(StrEnum):
@@ -109,6 +114,7 @@ class Reason(StrEnum):
     PRESENCE_DARK = "presence_dark"
     PRESENCE_ALWAYS = "presence_always"
     BECAME_DARK = "became_dark"
+    LIGHT_BACK = "light_back"
     BRIGHT = "bright"
     EMPTY = "empty"
     ZONE_TIMEOUT = "zone_timeout"

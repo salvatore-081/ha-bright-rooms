@@ -86,6 +86,8 @@ from .const import (
     CONF_ZONE_WAIT,
     DIM_TRANSITION,
     DOMAIN,
+    GOAL_ATTEMPTS,
+    GOAL_RETRY_SECONDS,
     LEARN_GROUP_SECONDS,
     LEARN_QUIET_BEFORE,
     ROOM_DEFAULTS,
@@ -191,6 +193,7 @@ class LastAction:
     action: Action
     reason: Reason
     at: datetime
+    detail: str | None = None  # why a command failed
 
     def as_dict(self) -> dict[str, Any]:
         """JSON-ready."""
@@ -198,6 +201,7 @@ class LastAction:
             "action": self.action.value,
             "reason": self.reason.value,
             "at": _iso(self.at),
+            "detail": self.detail,
         }
 
 
@@ -212,6 +216,17 @@ class OffSequence:
     remembered: dict[str, int] = field(
         default_factory=dict
     )  # brightness before dimming
+
+
+@dataclass(slots=True)
+class Goal:
+    """What the room's lights should be after Bright Rooms' last decision."""
+
+    state: str  # STATE_ON or STATE_OFF
+    reason: Reason
+    attempts: int = 0
+    failed: bool = False  # a failure was recorded: record the success too
+    warned: bool = False
 
 
 @dataclass(slots=True)
@@ -257,6 +272,10 @@ class RoomEngine:
         self._seq: OffSequence | None = None
         self._bright_deadline: datetime | None = None
         self._measurement: Measurement | None = None
+        self._goal: Goal | None = None
+        # A light was turned off by someone else since the last arrival seen
+        # (true at start: no arrival seen yet).
+        self._off_by_someone_else = True
         self._startup_check = False
         self._last_change: dict[str, datetime] = {}
         self._own_contexts: deque[str] = deque(maxlen=64)
@@ -424,15 +443,23 @@ class RoomEngine:
         if kind in ("switch", "brightness") and not self._is_ours(
             entity_id, new, context, now
         ):
+            if new is not None and new.state == STATE_OFF and self.occupied is True:
+                self._off_by_someone_else = True
             self._changed_by_someone_else(now)
         if self._seq is not None and not self._lights_on():
             self._end_sequence()
         self._update_ambient(now)
+        if kind == "available":
+            self._on_light_back(entity_id)
+        self._check_goal_reached(now)
 
     def _is_ours(
         self, entity_id: str, new: State | None, context: Context | None, now: datetime
     ) -> bool:
         if context is not None and context.id in self._own_contexts:
+            return True
+        # A command that raised or reported late but took effect after all.
+        if self._goal is not None and new is not None and new.state == self._goal.state:
             return True
         expected = self._expect.get(entity_id)
         return (
@@ -445,6 +472,7 @@ class RoomEngine:
     def _changed_by_someone_else(self, now: datetime) -> None:
         # Someone is looking after the lights: no turn-off after a restart.
         self._end_startup_check()
+        self._clear_goal()  # their choice wins
         if self._seq is not None:
             # Someone took over: leave every light as it is now.
             self._end_sequence()
@@ -464,6 +492,7 @@ class RoomEngine:
             if self.occupied is not True:
                 self._cancel_pending_on()
             self._check_startup()
+        self._check_goal_reason()
 
     # --------------------------------------------------------------- startup
 
@@ -507,6 +536,7 @@ class RoomEngine:
     # --------------------------------------------------------------- turn on
 
     def _on_arrival(self, now: datetime) -> None:
+        self._off_by_someone_else = False
         if self._seq is not None:
             self._cancel_sequence(now, restore=True)
             return
@@ -555,6 +585,9 @@ class RoomEngine:
         states = {e: self.hass.states.get(e) for e in self.cfg.lights}
         available = [e for e, s in states.items() if _available(s)]
         if not available:
+            # Every light is unavailable: turn them on when they come back.
+            if self.cfg.lights and not (self.cfg.only_when_dark and self.dark is False):
+                self._goal = Goal(STATE_ON, reason or self._presence_reason())
             return
         if any(states[e].state == STATE_ON for e in available):  # type: ignore[union-attr]
             if reason is None:
@@ -576,26 +609,16 @@ class RoomEngine:
             return
         self._turn_on(available, now, reason)
 
+    def _presence_reason(self) -> Reason:
+        return (
+            Reason.PRESENCE_DARK if self.cfg.only_when_dark else Reason.PRESENCE_ALWAYS
+        )
+
     def _turn_on(
         self, lights: list[str], now: datetime, reason: Reason | None = None
     ) -> None:
-        cfg = self.cfg
-        dimmable = [e for e in lights if self.dimmable(e)]
-        plain = [e for e in lights if e not in dimmable]
-        if plain:
-            self._call(SERVICE_TURN_ON, plain, {})
-        if dimmable:
-            pct = brightness_pct(
-                self.ambient,
-                cfg.brightness_min,
-                cfg.brightness_dark_lux,
-                cfg.brightness_full_lux,
-            )
-            self._call(SERVICE_TURN_ON, dimmable, {ATTR_BRIGHTNESS_PCT: pct})
-        if reason is None:
-            reason = (
-                Reason.PRESENCE_DARK if cfg.only_when_dark else Reason.PRESENCE_ALWAYS
-            )
+        reason = reason or self._presence_reason()
+        self._set_goal(Goal(STATE_ON, reason), lights)
         self._record(Action.TURNED_ON, reason, now)
 
     # -------------------------------------------------------------- turn off
@@ -705,13 +728,7 @@ class RoomEngine:
         on = self._lights_on()
         if not on:
             return
-        dimmable = [e for e in on if self.dimmable(e)]
-        plain = [e for e in on if e not in dimmable]
-        if plain:
-            self._call(SERVICE_TURN_OFF, plain, {})
-        if dimmable:
-            data = {ATTR_TRANSITION: self.cfg.transition} if self.cfg.transition else {}
-            self._call(SERVICE_TURN_OFF, dimmable, data)
+        self._set_goal(Goal(STATE_OFF, reason), on)
         self._record(Action.TURNED_OFF, reason, now)
 
     @callback
@@ -759,6 +776,8 @@ class RoomEngine:
             self._cancel("bright")
         if previous is False and self.dark is True:
             self._on_became_dark()
+        if previous != self.dark:
+            self._check_goal_reason()
 
     # -------------------------------------------------------------- learning
 
@@ -880,7 +899,13 @@ class RoomEngine:
 
     # ------------------------------------------------------------- commands
 
-    def _call(self, service: str, lights: list[str], data: dict[str, Any]) -> None:
+    def _call(
+        self,
+        service: str,
+        lights: list[str],
+        data: dict[str, Any],
+        on_error: Callable[[str], None] | None = None,
+    ) -> None:
         """Send a light command with Bright Rooms' own context."""
         context = Context()
         self._own_contexts.append(context.id)
@@ -891,22 +916,192 @@ class RoomEngine:
         for entity_id in lights:
             self._expect[entity_id] = (expected, until)
         self.hass.async_create_task(
-            self._async_call(service, {ATTR_ENTITY_ID: lights, **data}, context),
+            self._async_call(
+                service, {ATTR_ENTITY_ID: lights, **data}, context, on_error
+            ),
             eager_start=False,
         )
 
     async def _async_call(
-        self, service: str, data: dict[str, Any], context: Context
+        self,
+        service: str,
+        data: dict[str, Any],
+        context: Context,
+        on_error: Callable[[str], None] | None = None,
     ) -> None:
         try:
             await self.hass.services.async_call(
                 LIGHT_DOMAIN, service, data, blocking=True, context=context
             )
         except HomeAssistantError as err:
-            _LOGGER.warning("%s: light.%s failed: %s", self.title, service, err)
+            _LOGGER.debug("%s: light.%s failed: %s", self.title, service, err)
+            if on_error is not None:
+                on_error(str(err) or type(err).__name__)
+                self.parent.notify(self)
 
-    def _record(self, action: Action, reason: Reason, now: datetime) -> None:
-        self.last_action = LastAction(action, reason, now)
+    def _record(
+        self, action: Action, reason: Reason, now: datetime, detail: str | None = None
+    ) -> None:
+        self.last_action = LastAction(action, reason, now, detail)
+
+    # ----------------------------------------------------------------- goals
+
+    def _set_goal(self, goal: Goal, lights: list[str]) -> None:
+        """Command the lights towards a new goal; check and retry later."""
+        self._goal = goal
+        self._send_goal(goal, lights)
+
+    def _send_goal(self, goal: Goal, lights: list[str]) -> None:
+        goal.attempts += 1
+
+        @callback
+        def failed(detail: str) -> None:
+            if self._goal is not goal:
+                return
+            goal.failed = True
+            self._record(Action.FAILED, goal.reason, dt_util.utcnow(), detail)
+
+        dimmable = [e for e in lights if self.dimmable(e)]
+        plain = [e for e in lights if e not in dimmable]
+        cfg = self.cfg
+        if goal.state == STATE_ON:
+            if plain:
+                self._call(SERVICE_TURN_ON, plain, {}, failed)
+            if dimmable:
+                pct = brightness_pct(
+                    self.ambient,
+                    cfg.brightness_min,
+                    cfg.brightness_dark_lux,
+                    cfg.brightness_full_lux,
+                )
+                self._call(
+                    SERVICE_TURN_ON, dimmable, {ATTR_BRIGHTNESS_PCT: pct}, failed
+                )
+        else:
+            if plain:
+                self._call(SERVICE_TURN_OFF, plain, {}, failed)
+            if dimmable:
+                data = {ATTR_TRANSITION: cfg.transition} if cfg.transition else {}
+                self._call(SERVICE_TURN_OFF, dimmable, data, failed)
+        self._schedule("goal", GOAL_RETRY_SECONDS, self._goal_retry)
+
+    def _goal_reached(self, goal: Goal) -> bool:
+        return all(
+            (s := self.hass.states.get(e)) is not None and s.state == goal.state
+            for e in self.cfg.lights
+        )
+
+    def _check_goal_reached(self, now: datetime) -> None:
+        goal = self._goal
+        if goal is None or not self._goal_reached(goal):
+            return
+        self._clear_goal()
+        if goal.failed:
+            # Done after all (a retry, or a command that worked but raised).
+            action = Action.TURNED_ON if goal.state == STATE_ON else Action.TURNED_OFF
+            self._record(action, goal.reason, now)
+
+    @callback
+    def _goal_retry(self) -> None:
+        """Send the goal again to the available lights that did not follow."""
+        goal = self._goal
+        if goal is None:
+            return
+        now = dt_util.utcnow()
+        self._check_goal_reached(now)
+        if self._goal is not goal:
+            return
+        behind = [
+            e
+            for e in self.cfg.lights
+            if _available(s := self.hass.states.get(e)) and s.state != goal.state  # type: ignore[union-attr]
+        ]
+        if not behind:
+            return  # only unavailable lights left: done when they come back
+        if goal.attempts >= GOAL_ATTEMPTS:
+            if not goal.warned:
+                goal.warned = True
+                _LOGGER.warning(
+                    "%s: %s did not turn %s after %s attempts",
+                    self.title,
+                    ", ".join(behind),
+                    goal.state,
+                    goal.attempts,
+                )
+                if not goal.failed:
+                    goal.failed = True
+                    self._record(Action.FAILED, goal.reason, now, "no response")
+            return
+        self._send_goal(goal, behind)
+
+    def _clear_goal(self) -> None:
+        self._goal = None
+        self._cancel("goal")
+        for name in [n for n in self._timers if n.startswith("back:")]:
+            self._cancel(name)
+
+    def _check_goal_reason(self) -> None:
+        """Drop the goal when the reason for it no longer holds."""
+        goal = self._goal
+        if goal is None:
+            return
+        if goal.state == STATE_ON:
+            if self.occupied is not True or (
+                self.cfg.only_when_dark and self.dark is False
+            ):
+                self._clear_goal()
+        elif goal.reason is Reason.BRIGHT:
+            if self.dark is True:
+                self._clear_goal()
+        elif self.occupied is True:
+            self._clear_goal()
+
+    def _on_light_back(self, entity_id: str) -> None:
+        """A light is available again: give it the goal, or catch up on an arrival."""
+        if not self.enabled:
+            return
+        goal = self._goal
+        state = self.hass.states.get(entity_id)
+        if state is None:
+            return
+        if goal is not None:
+            if state.state == goal.state:
+                return
+            delay = 0.0
+            if goal.state == STATE_ON:
+                ready = state.last_changed + timedelta(seconds=self.cfg.min_off_seconds)
+                delay = (ready - dt_util.utcnow()).total_seconds()
+            self._schedule(
+                f"back:{entity_id}", delay, lambda: self._apply_back(entity_id)
+            )
+            return
+        cfg = self.cfg
+        if (
+            self.occupied is not True
+            or self._off_by_someone_else
+            or self._pending_on
+            or self._seq is not None
+            or (cfg.only_when_dark and self.dark is False)
+            or self._lights_on()
+        ):
+            return
+        # Someone came in while the lights were unavailable.
+        self._pending_on = True
+        self._schedule("on", 0, lambda: self._try_turn_on(Reason.LIGHT_BACK))
+
+    @callback
+    def _apply_back(self, entity_id: str) -> None:
+        goal = self._goal
+        state = self.hass.states.get(entity_id)
+        if goal is None or not _available(state) or state.state == goal.state:  # type: ignore[union-attr]
+            return
+        # From now on the goal is about this light coming back.
+        goal.reason = Reason.LIGHT_BACK
+        goal.attempts = 0
+        goal.failed = goal.warned = False
+        self._send_goal(goal, [entity_id])
+        action = Action.TURNED_ON if goal.state == STATE_ON else Action.TURNED_OFF
+        self._record(action, Reason.LIGHT_BACK, dt_util.utcnow())
 
     # ---------------------------------------------------------------- public
 
@@ -916,6 +1111,7 @@ class RoomEngine:
             return
         self.enabled = enabled
         if not enabled:
+            self._clear_goal()
             self._cancel_pending_on()
             self._end_sequence()
             self._bright_deadline = None
@@ -1007,6 +1203,7 @@ class RoomEngine:
             "dark": self.dark,
             "deadline": _iso(self.deadline),
             "last_action": self.last_action.as_dict() if self.last_action else None,
+            "goal": self._goal.state if self._goal else None,
             "lights": lights,
             "sensor_entities": self.sensor_entities(),
         }

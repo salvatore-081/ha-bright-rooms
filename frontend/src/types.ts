@@ -5,12 +5,14 @@ import type { Connection, HassEntity } from "home-assistant-js-websocket";
 
 export type RoomStatus = "disabled" | "off" | "on" | "waiting" | "dimmed";
 
-export type ActionKind = "turned_on" | "turned_off" | "dimmed" | "restored" | "skipped_on";
+export type ActionKind =
+  "turned_on" | "turned_off" | "dimmed" | "restored" | "skipped_on" | "failed";
 
 export type ActionReason =
   | "presence_dark"
   | "presence_always"
   | "became_dark"
+  | "light_back"
   | "bright"
   | "empty"
   | "zone_timeout"
@@ -25,6 +27,8 @@ export interface LastAction {
   reason: ActionReason;
   /** ISO time. */
   at: string;
+  /** Why a command failed (action "failed"), e.g. the integration's error. */
+  detail?: string | null;
 }
 
 /** The settings of a room (subentry data), as in DESIGN.md § Room settings. */
@@ -88,6 +92,8 @@ export interface RoomSnapshot {
   /** ISO time of the next timed step. */
   deadline: string | null;
   last_action: LastAction | null;
+  /** What Bright Rooms is still trying to reach (retries, lights coming back). */
+  goal?: "on" | "off" | null;
   lights: LightSnapshot[];
   /** Settings of the presence sensors' devices (number, select, switch, button). */
   sensor_entities: string[];
