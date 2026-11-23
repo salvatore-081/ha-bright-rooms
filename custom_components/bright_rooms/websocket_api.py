@@ -17,8 +17,9 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.event import async_call_later
 
-from .const import CONF_NAME, DOMAIN, ROOM_DEFAULTS, SUBENTRY_ROOM
+from .const import CONF_NAME, CONF_SCHEDULE, DOMAIN, ROOM_DEFAULTS, SUBENTRY_ROOM
 from .engine import BrightRoomsEngine, update_signal
+from .schedule import validate_schedule
 from .schema import (
     normalize_room,
     normalize_settings,
@@ -201,7 +202,7 @@ async def ws_schema(
             CONF_NAME: room_title(hass, dict(sub.data), sub.title),
         }
     else:
-        values = dict(ROOM_DEFAULTS)
+        values = {**ROOM_DEFAULTS, CONF_SCHEDULE: []}
     connection.send_result(
         msg["id"],
         {
@@ -231,7 +232,8 @@ async def ws_room_save(
 ) -> None:
     """Add or edit a room; field errors come back in the result.
 
-    Settings left out of the data take their default value.
+    Settings left out of the data take their default value. Without
+    `schedule` in the data the room's time bands stay as they are.
     """
     entry = _entry(hass)
     current = _room(entry, msg["room_id"]) if "room_id" in msg else None
@@ -241,10 +243,15 @@ async def ws_room_save(
         connection.send_result(msg["id"], {"errors": _field_errors(err)})
         return
     errors = validate_room(hass, entry, form, current.subentry_id if current else None)
+    if CONF_SCHEDULE in msg["data"]:
+        bands, band_errors = validate_schedule(msg["data"][CONF_SCHEDULE])
+        errors.update(band_errors)
+    else:
+        bands = list(current.data.get(CONF_SCHEDULE) or []) if current else []
     if errors:
         connection.send_result(msg["id"], {"errors": errors})
         return
-    data = normalize_room(form)
+    data = {**normalize_room(form), CONF_SCHEDULE: bands}
     title = room_title(hass, data)
     if current is None:
         sub = ConfigSubentry(

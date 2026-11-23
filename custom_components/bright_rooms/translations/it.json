@@ -44,7 +44,8 @@
         "no_lights": "Scegli almeno una luce.",
         "bright_not_above_dark": "Deve essere più alta della soglia del buio.",
         "brightness_lux_order": "Deve essere più alta del valore della luminosità minima.",
-        "light_in_other_room": "Una di queste luci è già in un'altra stanza."
+        "light_in_other_room": "Una di queste luci è già in un'altra stanza.",
+        "schedule_invalid": "Una fascia oraria non è valida: controlla orari, giorni e attese (almeno una)."
       },
       "step": {
         "user": {
@@ -206,6 +207,9 @@
           },
           "detail": {
             "name": "Dettaglio"
+          },
+          "active_band": {
+            "name": "Fascia oraria"
           },
           "deadline": {
             "name": "Prossimo passo"

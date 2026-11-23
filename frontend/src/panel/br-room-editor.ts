@@ -6,13 +6,28 @@ import { LitElement, type PropertyValues, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import "../components/br-room-tile";
 import "../components/br-entities-card";
+import "../components/br-schedule-editor";
 import { errorMessage, fetchSchema, saveRoom, setContribution } from "../api";
 import { confirmDialog } from "../components/br-confirm";
 import { type FormatContext, formatAgo, formatLux } from "../format";
 import { cleanData, formCallbacks, groupFields, nestErrors, splitErrors } from "../form";
 import { navigate, notify, panelPath } from "../nav";
+import {
+  normalizeBands,
+  scheduleSaveError,
+  scheduleValid,
+  serializeBands,
+  validateSchedule,
+} from "../schedule";
 import { shared, tokens } from "../styles";
-import type { FormField, HomeAssistant, LightSnapshot, RoomSnapshot, Snapshot } from "../types";
+import type {
+  Band,
+  FormField,
+  HomeAssistant,
+  LightSnapshot,
+  RoomSnapshot,
+  Snapshot,
+} from "../types";
 import { confirmDelete } from "./br-view-rooms";
 
 /** A contribution typed in the panel: a non-negative number, or null when not valid. */
@@ -33,6 +48,9 @@ export class BrRoomEditor extends LitElement {
   @state() private _schema?: FormField[];
   @state() private _data: Record<string, unknown> = {};
   @state() private _errors: Record<string, string> = {};
+  /** The time bands being edited (saved with the rest of the room). */
+  @state() private _bands: Band[] = [];
+  @state() private _showBandErrors = false;
   @state() private _loadError?: string;
   @state() private _saving = false;
   /** Contributions being typed, by light. */
@@ -177,7 +195,10 @@ export class BrRoomEditor extends LitElement {
     try {
       const form = await fetchSchema(this.hass, this.roomId);
       this._schema = form.schema;
-      this._data = { ...form.values };
+      const { schedule, ...values } = form.values;
+      this._data = values;
+      this._bands = normalizeBands(schedule);
+      this._showBandErrors = false;
     } catch (err) {
       this._loadError = errorMessage(err);
     }
@@ -257,6 +278,7 @@ export class BrRoomEditor extends LitElement {
             </div>
           </div>`,
       )}
+      ${this._schedule(fields)}
       <div class="actions">
         <button class="btn filled" ?disabled=${this._saving} @click=${this._save}>
           <ha-icon icon="mdi:content-save-outline"></ha-icon>${t("common.save")}
@@ -274,6 +296,31 @@ export class BrRoomEditor extends LitElement {
         }
       </div>
     `;
+  }
+
+  private _schedule(fields: Record<string, string>) {
+    const { t } = this.ctx;
+    const room = this._room;
+    const waits = {
+      empty_wait: Number(this._data.empty_wait ?? 30),
+      zone_wait: Number(this._data.zone_wait ?? 150),
+    };
+    return html`<div class="card section schedule">
+      <h2><ha-icon icon="mdi:clock-time-four-outline"></ha-icon>${t("editor.section_schedule")}</h2>
+      <div class="card-content hint">${t("editor.hint_schedule")}</div>
+      <div class="card-content">
+        <br-schedule-editor
+          .ctx=${this.ctx}
+          .bands=${this._bands}
+          .activeBand=${room?.active_band ?? null}
+          .roomWaits=${waits}
+          .saveError=${scheduleSaveError(fields)}
+          .showErrors=${this._showBandErrors}
+          .disabled=${this._saving}
+          @bands-changed=${(ev: CustomEvent<{ bands: Band[] }>) => (this._bands = ev.detail.bands)}
+        ></br-schedule-editor>
+      </div>
+    </div>`;
   }
 
   private _contributions(room: RoomSnapshot) {
@@ -403,9 +450,15 @@ export class BrRoomEditor extends LitElement {
 
   private async _save() {
     const { t } = this.ctx;
+    if (!scheduleValid(validateSchedule(this._bands))) {
+      this._showBandErrors = true;
+      notify(this, t("band_error.fix_first"));
+      return;
+    }
     this._saving = true;
     try {
-      const res = await saveRoom(this.hass, cleanData(this._data), this.roomId);
+      const data = { ...cleanData(this._data), schedule: serializeBands(this._bands) };
+      const res = await saveRoom(this.hass, data, this.roomId);
       if (res.errors) {
         this._errors = res.errors;
         return;

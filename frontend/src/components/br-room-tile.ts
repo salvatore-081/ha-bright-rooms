@@ -23,6 +23,7 @@ import {
   statusLabel,
   statusTone,
 } from "../format";
+import { activeBand, bandName, effectiveWaits, formatSeconds } from "../schedule";
 import { shared, tokens } from "../styles";
 import type { LightSnapshot, RoomSnapshot } from "../types";
 
@@ -194,6 +195,9 @@ export class BrRoomTile extends LitElement {
         color: var(--br-text);
         font-weight: 500;
       }
+      .wait.band {
+        color: var(--br-text);
+      }
       .last.failed {
         color: var(--br-warning);
         font-weight: 500;
@@ -283,6 +287,7 @@ export class BrRoomTile extends LitElement {
             )}
           </ul>
           <div class="facts">
+            ${this._wait()}
             ${
               template && r.deadline
                 ? html`<div class="countdown">
@@ -306,6 +311,24 @@ export class BrRoomTile extends LitElement {
         </div>
       </div>
     `;
+  }
+
+  /** The wait before turning off in force, and the time band that sets it. */
+  private _wait() {
+    const { t } = this.ctx;
+    const r = this.room;
+    const wait = formatSeconds(effectiveWaits(r).empty_wait);
+    const active = activeBand(r);
+    return active
+      ? html`<div class="wait band">
+          <ha-icon icon="mdi:clock-time-four-outline"></ha-icon>${t("room.band_wait", {
+            band: bandName(active.band, active.index, t),
+            wait,
+          })}
+        </div>`
+      : html`<div class="wait">
+          <ha-icon icon="mdi:timer-sand"></ha-icon>${t("room.wait", { wait })}
+        </div>`;
   }
 
   private _open() {

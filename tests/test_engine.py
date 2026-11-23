@@ -1320,3 +1320,213 @@ async def test_bright_turn_off_goal_cleared_when_dark_again(
     assert room.snapshot()["goal"] == "off"
     await lux(hass, 160)  # ambient 10: dark again
     assert room.snapshot()["goal"] is None
+
+
+# --------------------------------------------------------------- time bands
+
+# make() sets up the room at 20:10, a Monday.
+BAND_EVENING = {
+    "id": "eve",
+    "name": "Evening",
+    "start": "18:00",
+    "end": "23:00",
+    "days": [],
+    "empty_wait": 120,
+    "zone_wait": None,
+}
+
+
+async def test_band_overrides_the_empty_wait(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await _lights_on(
+        hass, freezer, dim_percent=100, schedule=[BAND_EVENING]
+    )
+    room = kitchen(entry)
+    assert room.active_band().id == "eve"
+    assert room.effective() == (120, 150)
+    await presence(hass, False)
+    await advance(hass, freezer, 119, step=7)
+    assert lights.calls == []
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert len(lights.of("turn_off")) == 2
+
+
+async def test_band_partial_override_and_zone_wait(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    band = {**BAND_EVENING, "empty_wait": None, "zone_wait": 20}
+    entry, lights = await _lights_on(hass, freezer, dim_percent=100, schedule=[band])
+    assert kitchen(entry).effective() == (30, 20)
+    hass.states.async_set(ZONE, "on")
+    await presence(hass, False)
+    await advance(hass, freezer, 20)  # zone wait over, then the room's 30 s
+    await advance(hass, freezer, 29)
+    assert lights.calls == []
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert len(lights.of("turn_off")) == 2
+
+
+async def test_band_read_when_the_wait_starts(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """The band ends during the wait: the wait keeps its length."""
+    band = {**BAND_EVENING, "start": "19:00", "end": "20:11"}
+    entry, lights = await _lights_on(hass, freezer, dim_percent=100, schedule=[band])
+    room = kitchen(entry)
+    await presence(hass, False)
+    await advance(hass, freezer, 90, step=10)
+    assert room.active_band() is None
+    assert lights.calls == []
+    await advance(hass, freezer, 30, step=10)
+    await settle(hass)
+    assert len(lights.of("turn_off")) == 2
+
+
+async def test_band_shown_on_the_status_sensor(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    band = {**BAND_EVENING, "name": None, "start": "20:00", "end": "20:15"}
+    entry, _ = await make(hass, freezer, schedule=[band])
+    status = "sensor.kitchen_bright_rooms_kitchen_status"
+    assert hass.states.get(status).attributes["active_band"] == "20:00–20:15"
+    snap = kitchen(entry).snapshot()
+    assert snap["active_band"] == "eve"
+    assert snap["effective"] == {"empty_wait": 120, "zone_wait": 150}
+    # The band ends at 20:15: the sensor updates by itself.
+    await advance(hass, freezer, 300, step=60)
+    assert hass.states.get(status).attributes["active_band"] is None
+    assert kitchen(entry).snapshot()["effective"] == {
+        "empty_wait": 30,
+        "zone_wait": 150,
+    }
+
+
+# ----------------------------------------------------------------- re-entry
+
+
+async def test_back_right_after_the_lights_went_off(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await _lights_on(hass, freezer)
+    room = kitchen(entry)
+    await presence(hass, False)
+    await advance(hass, freezer, 40)  # dimmed at 30 s, off at 40 s
+    await settle(hass)
+    assert room.status == "off"
+    lights.clear()
+    await advance(hass, freezer, 9)
+    await presence(hass, True)
+    await settle(hass)
+    calls = {tuple(c.data["entity_id"]): dict(c.data) for c in lights.of("turn_on")}
+    # Back as before the dimming.
+    assert calls == {
+        (CEILING,): {"entity_id": [CEILING], "brightness": 255},
+        (STRIP,): {"entity_id": [STRIP]},
+    }
+    assert _last(room) == ("turned_on", "presence_back")
+
+
+async def test_back_after_the_window_is_a_normal_arrival(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await _lights_on(hass, freezer)
+    await presence(hass, False)
+    await advance(hass, freezer, 40)
+    await settle(hass)
+    lights.clear()
+    await advance(hass, freezer, 11)
+    await presence(hass, True)
+    await settle(hass)
+    assert _last(kitchen(entry)) == ("turned_on", "presence_dark")
+    (dimmed,) = [c for c in lights.of("turn_on") if c.data["entity_id"] == [CEILING]]
+    assert dimmed.data["brightness_pct"] == 100
+
+
+async def test_back_while_the_turn_off_is_in_flight(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """The bug: arrival seen while the light was still on, then it went off."""
+    entry, lights = await _lights_on(hass, freezer, lights=[CEILING], dim_percent=100)
+    room = kitchen(entry)
+    lights.deaf.add(CEILING)  # the command is on its way
+    await presence(hass, False)
+    await advance(hass, freezer, 30)
+    await settle(hass)
+    assert [c.service for c in lights.calls] == ["turn_off"]
+    await presence(hass, True)  # back in the same second: the light is still on
+    await settle(hass)
+    assert len(lights.calls) == 1
+    lights.deaf.clear()
+    set_light(hass, CEILING, "off")  # the light reports off (no context)
+    await settle(hass)
+    assert [c.service for c in lights.calls] == ["turn_off", "turn_on"]
+    assert hass.states.get(CEILING).state == "on"
+    assert _last(room) == ("turned_on", "presence_back")
+
+
+async def test_gone_again_while_in_flight(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    _entry, lights = await _lights_on(hass, freezer, lights=[CEILING], dim_percent=100)
+    lights.deaf.add(CEILING)
+    await presence(hass, False)
+    await advance(hass, freezer, 30)
+    await settle(hass)
+    await presence(hass, True)
+    await presence(hass, False)
+    set_light(hass, CEILING, "off")
+    await advance(hass, freezer, 30, step=10)
+    assert [c.service for c in lights.calls] == ["turn_off"]
+
+
+async def test_back_respects_min_off_seconds(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    _entry, lights = await _lights_on(
+        hass, freezer, lights=[CEILING], dim_percent=100, **{CONF_MIN_OFF_SECONDS: 8}
+    )
+    await presence(hass, False)
+    await advance(hass, freezer, 30)
+    await settle(hass)
+    lights.clear()
+    await advance(hass, freezer, 2)
+    await presence(hass, True)
+    await advance(hass, freezer, 5)
+    assert lights.calls == []
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert [c.service for c in lights.calls] == ["turn_on"]
+
+
+async def test_back_after_someone_else_changed_a_light(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await _lights_on(hass, freezer, dim_percent=100)
+    await presence(hass, False)
+    await advance(hass, freezer, 30)
+    await settle(hass)
+    lights.clear()
+    set_light(hass, STRIP, "on")  # by hand
+    await presence(hass, True)
+    await settle(hass)
+    assert lights.calls == []
+    assert _last(kitchen(entry)) == ("skipped_on", "lights_already_on")
+
+
+async def test_no_reentry_after_the_bright_turn_off(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await _known(hass, freezer)
+    await lux(hass, 400)
+    await advance(hass, freezer, 600, step=30)
+    await settle(hass)
+    assert _last(kitchen(entry)) == ("turned_off", "bright")
+    lights.clear()
+    await presence(hass, False)
+    await presence(hass, True)
+    await settle(hass)
+    assert lights.calls == []
+    assert _last(kitchen(entry)) == ("skipped_on", "not_dark")

@@ -84,6 +84,7 @@ class StatusSensor(BrightRoomsRoomEntity, SensorEntity):
             "reason": last["reason"] if last else None,
             "at": last["at"] if last else None,
             "detail": last["detail"] if last else None,
+            "active_band": band.label if (band := self.room.active_band()) else None,
             "deadline": deadline.isoformat() if deadline else None,
         }
 

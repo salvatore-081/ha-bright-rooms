@@ -37,6 +37,7 @@ from .const import (
     CONF_ONLY_WHEN_DARK,
     CONF_OTHER_LIGHTS,
     CONF_PRESENCE_SENSORS,
+    CONF_SCHEDULE,
     CONF_SETTLE_SECONDS,
     CONF_TRANSITION,
     CONF_ZONE_SENSORS,
@@ -183,6 +184,7 @@ def room_config(data: dict[str, Any]) -> dict[str, Any]:
         CONF_OTHER_LIGHTS: [],
         **ROOM_DEFAULTS,
         **{k: v for k, v in data.items() if k in room_keys()},
+        CONF_SCHEDULE: list(data.get(CONF_SCHEDULE) or []),
     }
 
 

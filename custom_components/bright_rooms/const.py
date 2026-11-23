@@ -49,6 +49,7 @@ CONF_ZONE_WAIT: Final = "zone_wait"
 CONF_DIM_PERCENT: Final = "dim_percent"
 CONF_DIM_WAIT: Final = "dim_wait"
 CONF_TRANSITION: Final = "transition"
+CONF_SCHEDULE: Final = "schedule"
 
 ROOM_DEFAULTS: Final[dict[str, object]] = {
     CONF_ON_DELAY: 0,
@@ -85,6 +86,8 @@ STARTUP_GRACE: Final = 30
 # the lights that did not follow, up to GOAL_ATTEMPTS times in all.
 GOAL_RETRY_SECONDS: Final = 10
 GOAL_ATTEMPTS: Final = 3
+# Someone back this soon after an empty room's lights went off: back on.
+REENTRY_SECONDS: Final = 10
 
 
 class Status(StrEnum):

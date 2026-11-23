@@ -489,4 +489,80 @@ def test_versions_match() -> None:
         (root / "custom_components/bright_rooms/manifest.json").read_text()
     )
     frontend = json.loads((root / "frontend/package.json").read_text())
-    assert manifest["version"] == frontend["version"] == "0.1.3"
+    assert manifest["version"] == frontend["version"] == "0.1.4"
+
+
+async def test_schedule_save_and_round_trip(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_ws_client
+) -> None:
+    client = await hass_ws_client(hass)
+    entry, _ = await make(hass, freezer)
+    room_id = kitchen(entry).subentry_id
+    res = await _call(client, type="bright_rooms/schema", room_id=room_id)
+    values = res["result"]["values"]
+    assert values["schedule"] == []
+    assert "schedule" not in [f["name"] for f in res["result"]["schema"]]
+    res = await _call(client, type="bright_rooms/schema")
+    assert res["result"]["values"]["schedule"] == []
+
+    bad = {"start": "25:00", "end": "06:00", "empty_wait": 60}
+    good = {"name": "Dinner", "start": "20:00", "end": "23:00", "empty_wait": 300}
+    res = await _call(
+        client,
+        type="bright_rooms/room/save",
+        room_id=room_id,
+        data={**values, "schedule": [good, bad]},
+    )
+    assert res["result"]["errors"] == {
+        "schedule": "schedule_invalid",
+        "schedule.1": "schedule_invalid",
+    }
+
+    res = await _call(
+        client,
+        type="bright_rooms/room/save",
+        room_id=room_id,
+        data={**values, "schedule": [good]},
+    )
+    assert res["result"] == {"room_id": room_id}
+    await hass.async_block_till_done()
+    (band,) = entry.subentries[room_id].data["schedule"]
+    assert band == {
+        "id": band["id"],
+        "name": "Dinner",
+        "start": "20:00",
+        "end": "23:00",
+        "days": [],
+        "empty_wait": 300,
+        "zone_wait": None,
+    }
+    assert len(band["id"]) == 32
+    res = await _call(client, type="bright_rooms/rooms")
+    room = res["result"]["rooms"][0]
+    assert room["config"]["schedule"] == [band]
+    assert room["active_band"] == band["id"]  # 20:10
+    assert room["effective"] == {"empty_wait": 300, "zone_wait": 150}
+    res = await _call(client, type="bright_rooms/schema", room_id=room_id)
+    assert res["result"]["values"]["schedule"] == [band]
+
+    # Saved without "schedule": the bands stay; the id is kept on a resave.
+    data = {k: v for k, v in values.items() if k != "schedule"}
+    await _call(client, type="bright_rooms/room/save", room_id=room_id, data=data)
+    await hass.async_block_till_done()
+    assert entry.subentries[room_id].data["schedule"] == [band]
+    await _call(
+        client,
+        type="bright_rooms/room/save",
+        room_id=room_id,
+        data={**values, "schedule": [band]},
+    )
+    await hass.async_block_till_done()
+    assert entry.subentries[room_id].data["schedule"] == [band]
+    await _call(
+        client,
+        type="bright_rooms/room/save",
+        room_id=room_id,
+        data={**values, "schedule": []},
+    )
+    await hass.async_block_till_done()
+    assert entry.subentries[room_id].data["schedule"] == []

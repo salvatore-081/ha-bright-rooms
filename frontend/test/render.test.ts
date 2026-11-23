@@ -40,6 +40,7 @@ describe("room tile", () => {
     expect(all).toContain("Tavolo On · 50 %");
     expect(all).toContain("Cappa Off");
     expect(all).toContain("Turned on: someone came in and it was dark · 5 minutes ago");
+    expect(all).toContain("Band: Sera · wait 1 min 30 s");
     expect(root.querySelector(".head")!.classList).toContain("tone-active");
 
     const bar = root.querySelector("br-lux-bar")!;
@@ -84,6 +85,8 @@ describe("room tile", () => {
       deadline: null,
       last_action: null,
       status: "off",
+      active_band: null,
+      effective: { empty_wait: 30, zone_wait: 150 },
     });
     Object.assign(el, { room: r, ctx, link: false });
     const root = await mount(el);
@@ -93,6 +96,7 @@ describe("room tile", () => {
     expect(root.querySelector("br-lux-bar")).toBeNull();
     expect(root.querySelector("br-countdown")).toBeNull();
     expect(root.querySelector(".open")!.getAttribute("role")).toBeNull();
+    expect(all).toContain("Waits 30 s when empty");
   });
 });
 

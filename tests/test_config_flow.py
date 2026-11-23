@@ -97,6 +97,7 @@ async def test_room_subentry(hass: HomeAssistant) -> None:
     subentry = next(iter(entry.subentries.values()))
     assert subentry.unique_id is None
     assert subentry.data[CONF_NAME] == "Cooktop"
+    assert subentry.data["schedule"] == []
     assert subentry.data[CONF_EMPTY_WAIT] == 30
     assert isinstance(subentry.data[CONF_EMPTY_WAIT], int)
 
@@ -121,6 +122,32 @@ async def test_room_subentry(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
     assert entry.subentries[subentry.subentry_id].data[CONF_EMPTY_WAIT] == 60
+
+    # Time bands are edited in the panel: the flow keeps them.
+    band = {
+        "id": "b1",
+        "name": None,
+        "start": "22:00",
+        "end": "06:00",
+        "days": [],
+        "empty_wait": 600,
+        "zone_wait": None,
+    }
+    sub = entry.subentries[subentry.subentry_id]
+    hass.config_entries.async_update_subentry(
+        entry, sub, data={**sub.data, "schedule": [band]}
+    )
+    result = await hass.config_entries.subentries.async_init(
+        (entry.entry_id, SUBENTRY_ROOM),
+        context={"source": "reconfigure", "subentry_id": subentry.subentry_id},
+    )
+    result = await hass.config_entries.subentries.async_configure(
+        result["flow_id"], _room(kitchen.id, name="cooktop", **{CONF_EMPTY_WAIT: 45})
+    )
+    assert result["reason"] == "reconfigure_successful"
+    data = entry.subentries[subentry.subentry_id].data
+    assert data[CONF_EMPTY_WAIT] == 45
+    assert data["schedule"] == [band]
     assert entry.subentries[subentry.subentry_id].title == "cooktop"
 
 

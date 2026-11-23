@@ -31,6 +31,21 @@ export interface LastAction {
   detail?: string | null;
 }
 
+/** A time band of a room: the waits before turning off, overridden between two times. */
+export interface Band {
+  /** Missing on a band not saved yet (the integration generates it). */
+  id?: string;
+  name: string | null;
+  /** "HH:MM"; a band whose end is at or before its start crosses midnight. */
+  start: string;
+  end: string;
+  /** "mon"…"sun"; empty: every day. */
+  days: string[];
+  /** Seconds; null: the room's own value. At least one is set. */
+  empty_wait: number | null;
+  zone_wait: number | null;
+}
+
 /** The settings of a room (subentry data), as in DESIGN.md § Room settings. */
 export interface RoomConfig {
   /** The room's name; several rooms may share an area. */
@@ -57,6 +72,8 @@ export interface RoomConfig {
   dim_percent?: number;
   dim_wait?: number;
   transition?: number;
+  /** Time bands, at most 8; the first active one wins. */
+  schedule?: Band[];
   [key: string]: unknown;
 }
 
@@ -94,6 +111,10 @@ export interface RoomSnapshot {
   last_action: LastAction | null;
   /** What Bright Rooms is still trying to reach (retries, lights coming back). */
   goal?: "on" | "off" | null;
+  /** The id of the time band in force, if any. */
+  active_band?: string | null;
+  /** The waits in force (the active band's, or the room's). */
+  effective?: { empty_wait: number; zone_wait: number };
   lights: LightSnapshot[];
   /** Settings of the presence sensors' devices (number, select, switch, button). */
   sensor_entities: string[];

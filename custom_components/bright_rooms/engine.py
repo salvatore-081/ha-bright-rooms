@@ -80,6 +80,7 @@ from .const import (
     CONF_ONLY_WHEN_DARK,
     CONF_OTHER_LIGHTS,
     CONF_PRESENCE_SENSORS,
+    CONF_SCHEDULE,
     CONF_SETTLE_SECONDS,
     CONF_TRANSITION,
     CONF_ZONE_SENSORS,
@@ -90,6 +91,7 @@ from .const import (
     GOAL_RETRY_SECONDS,
     LEARN_GROUP_SECONDS,
     LEARN_QUIET_BEFORE,
+    REENTRY_SECONDS,
     ROOM_DEFAULTS,
     STARTUP_GRACE,
     SUBENTRY_ROOM,
@@ -97,6 +99,7 @@ from .const import (
     Reason,
     Status,
 )
+from .schedule import Band, active_band, next_boundary
 from .schema import room_config, room_title, settings
 from .store import BrightRoomsStore, Contribution
 
@@ -155,6 +158,7 @@ class RoomConfig:
     dim_percent: float
     dim_wait: float
     transition: float
+    schedule: tuple[Band, ...] = ()
 
     @classmethod
     def from_data(cls, data: dict[str, Any]) -> RoomConfig:
@@ -183,7 +187,28 @@ class RoomConfig:
             dim_percent=float(d[CONF_DIM_PERCENT]),
             dim_wait=float(d[CONF_DIM_WAIT]),
             transition=float(d[CONF_TRANSITION]),
+            schedule=tuple(_bands(d.get(CONF_SCHEDULE) or [])),
         )
+
+
+def _bands(raw: list[Any]) -> list[Band]:
+    bands = []
+    for item in raw:
+        try:
+            bands.append(Band.from_data(item))
+        except KeyError, TypeError, ValueError:
+            _LOGGER.warning("Ignoring an invalid time band: %s", item)
+    return bands
+
+
+@dataclass(slots=True)
+class Reentry:
+    """Lights an empty room's turn-off switched off: back on if someone returns."""
+
+    lights: dict[str, int | None]  # light -> brightness to restore (None: just on)
+    until: datetime  # end of the window
+    in_flight: bool = True  # the lights have not all reported off yet
+    arrived: bool = False  # someone came back while in flight
 
 
 @dataclass(frozen=True, slots=True)
@@ -224,6 +249,8 @@ class Goal:
 
     state: str  # STATE_ON or STATE_OFF
     reason: Reason
+    # Brightness (0-255) of dimmable lights that go back to a known level.
+    brightness: dict[str, int] = field(default_factory=dict)
     attempts: int = 0
     failed: bool = False  # a failure was recorded: record the success too
     warned: bool = False
@@ -273,6 +300,7 @@ class RoomEngine:
         self._bright_deadline: datetime | None = None
         self._measurement: Measurement | None = None
         self._goal: Goal | None = None
+        self._reentry: Reentry | None = None
         # A light was turned off by someone else since the last arrival seen
         # (true at start: no arrival seen yet).
         self._off_by_someone_else = True
@@ -306,6 +334,7 @@ class RoomEngine:
         )
         self._startup_check = True
         self._check_startup()
+        self._schedule_band_refresh()
 
     @callback
     def stop(self) -> None:
@@ -451,12 +480,23 @@ class RoomEngine:
         self._update_ambient(now)
         if kind == "available":
             self._on_light_back(entity_id)
+        self._check_reentry(now)
         self._check_goal_reached(now)
 
     def _is_ours(
         self, entity_id: str, new: State | None, context: Context | None, now: datetime
     ) -> bool:
         if context is not None and context.id in self._own_contexts:
+            return True
+        # A turn-off still in flight when someone came back.
+        r = self._reentry
+        if (
+            r is not None
+            and r.in_flight
+            and entity_id in r.lights
+            and new is not None
+            and new.state == STATE_OFF
+        ):
             return True
         # A command that raised or reported late but took effect after all.
         if self._goal is not None and new is not None and new.state == self._goal.state:
@@ -473,6 +513,7 @@ class RoomEngine:
         # Someone is looking after the lights: no turn-off after a restart.
         self._end_startup_check()
         self._clear_goal()  # their choice wins
+        self._reentry = None
         if self._seq is not None:
             # Someone took over: leave every light as it is now.
             self._end_sequence()
@@ -537,6 +578,15 @@ class RoomEngine:
 
     def _on_arrival(self, now: datetime) -> None:
         self._off_by_someone_else = False
+        r = self._reentry
+        if r is not None and self.enabled and now <= r.until:
+            if r.in_flight:
+                # Decided when the turn-off completes (_check_reentry).
+                r.arrived = True
+            else:
+                self._restore_reentry()
+            return
+        self._reentry = None
         if self._seq is not None:
             self._cancel_sequence(now, restore=True)
             return
@@ -625,6 +675,8 @@ class RoomEngine:
 
     def _on_leave(self, now: datetime) -> None:
         self._cancel_pending_on()
+        if self._reentry is not None:
+            self._reentry.arrived = False  # gone again before the lights went off
         if not self.enabled or not self._lights_on():
             return
         self._seq = OffSequence()
@@ -634,9 +686,10 @@ class RoomEngine:
         """Zone wait while a zone sensor is on (within its limit), then empty wait."""
         seq = self._seq
         assert seq is not None
+        empty_wait, zone_wait = self.effective(now)
         if self.zone_occupied and not seq.zone_timed_out:
             if seq.zone_until is None:
-                seq.zone_until = now + timedelta(seconds=self.cfg.zone_wait)
+                seq.zone_until = now + timedelta(seconds=zone_wait)
             if seq.zone_until > now:
                 seq.phase = "zone"
                 seq.deadline = seq.zone_until
@@ -646,8 +699,8 @@ class RoomEngine:
                 return
             seq.zone_timed_out = True
         seq.phase = "empty"
-        seq.deadline = now + timedelta(seconds=self.cfg.empty_wait)
-        self._schedule("seq", self.cfg.empty_wait, self._sequence_dim)
+        seq.deadline = now + timedelta(seconds=empty_wait)
+        self._schedule("seq", empty_wait, self._sequence_dim)
 
     @callback
     def _zone_timeout(self) -> None:
@@ -694,7 +747,26 @@ class RoomEngine:
         if seq is None:
             return
         self._end_sequence()
-        self._turn_off(self._off_reason(seq), dt_util.utcnow())
+        now = dt_util.utcnow()
+        lights: dict[str, int | None] = {}
+        for entity_id in self._lights_on():
+            state = self.hass.states.get(entity_id)
+            brightness = state.attributes.get(ATTR_BRIGHTNESS) if state else None
+            if entity_id in seq.remembered:
+                brightness = seq.remembered[entity_id]
+            lights[entity_id] = (
+                int(brightness) if brightness and self.dimmable(entity_id) else None
+            )
+        if lights:
+            # In flight at most as long as the command is retried.
+            self._reentry = Reentry(
+                lights,
+                now
+                + timedelta(
+                    seconds=REENTRY_SECONDS + GOAL_RETRY_SECONDS * GOAL_ATTEMPTS
+                ),
+            )
+        self._turn_off(self._off_reason(seq), now)
 
     @staticmethod
     def _off_reason(seq: OffSequence) -> Reason:
@@ -738,6 +810,7 @@ class RoomEngine:
             return
         self._cancel_pending_on()
         self._end_sequence()
+        self._reentry = None
         self._turn_off(Reason.BRIGHT, dt_util.utcnow())
 
     # --------------------------------------------------------------- ambient
@@ -944,6 +1017,86 @@ class RoomEngine:
     ) -> None:
         self.last_action = LastAction(action, reason, now, detail)
 
+    # -------------------------------------------------------------- re-entry
+
+    def _check_reentry(self, now: datetime) -> None:
+        """The turn-off in flight completed: open the window, or turn back on."""
+        r = self._reentry
+        if r is None or not r.in_flight:
+            return
+        if any(
+            (s := self.hass.states.get(e)) is not None and s.state == STATE_ON
+            for e in r.lights
+        ):
+            return
+        r.in_flight = False
+        r.until = now + timedelta(seconds=REENTRY_SECONDS)
+        if r.arrived and self.occupied is True:
+            self._restore_reentry()
+
+    def _restore_reentry(self) -> None:
+        """Someone came back right after the lights went off: back as they were."""
+        r, self._reentry = self._reentry, None
+        if r is None:
+            return
+        states = {e: self.hass.states.get(e) for e in r.lights}
+        lights = [
+            e for e, s in states.items() if s is not None and s.state == STATE_OFF
+        ]
+        if not lights:
+            return
+        ready = max(states[e].last_changed for e in lights) + timedelta(  # type: ignore[union-attr]
+            seconds=self.cfg.min_off_seconds
+        )
+        self._cancel_pending_on()
+        self._pending_on = True
+
+        def turn_on() -> None:
+            self._pending_on = False
+            if not self.enabled or self.occupied is not True:
+                return
+            off = [
+                e
+                for e in lights
+                if (s := self.hass.states.get(e)) is not None and s.state == STATE_OFF
+            ]
+            if not off:
+                return
+            goal = Goal(
+                STATE_ON,
+                Reason.PRESENCE_BACK,
+                brightness={e: b for e, b in r.lights.items() if b is not None},
+            )
+            self._set_goal(goal, off)
+            self._record(Action.TURNED_ON, Reason.PRESENCE_BACK, dt_util.utcnow())
+
+        self._schedule("on", (ready - dt_util.utcnow()).total_seconds(), turn_on)
+
+    # ---------------------------------------------------------------- bands
+
+    def active_band(self, now: datetime | None = None) -> Band | None:
+        """The room's time band active now, if any."""
+        return active_band(self.cfg.schedule, dt_util.as_local(now or dt_util.utcnow()))
+
+    def effective(self, now: datetime | None = None) -> tuple[int, int]:
+        """Empty wait and zone wait now (a band may override them)."""
+        band = self.active_band(now)
+        empty = int(self.cfg.empty_wait)
+        zone = int(self.cfg.zone_wait)
+        if band is not None:
+            empty = band.empty_wait if band.empty_wait is not None else empty
+            zone = band.zone_wait if band.zone_wait is not None else zone
+        return empty, zone
+
+    def _schedule_band_refresh(self) -> None:
+        """Update the entities and the panel when a band starts or ends."""
+        now = dt_util.as_local(dt_util.utcnow())
+        at = next_boundary(self.cfg.schedule, now)
+        if at is not None:
+            self._schedule(
+                "band", (at - now).total_seconds(), self._schedule_band_refresh
+            )
+
     # ----------------------------------------------------------------- goals
 
     def _set_goal(self, goal: Goal, lights: list[str]) -> None:
@@ -965,6 +1118,14 @@ class RoomEngine:
         plain = [e for e in lights if e not in dimmable]
         cfg = self.cfg
         if goal.state == STATE_ON:
+            for entity_id in [e for e in dimmable if e in goal.brightness]:
+                dimmable.remove(entity_id)
+                self._call(
+                    SERVICE_TURN_ON,
+                    [entity_id],
+                    {ATTR_BRIGHTNESS: goal.brightness[entity_id]},
+                    failed,
+                )
             if plain:
                 self._call(SERVICE_TURN_ON, plain, {}, failed)
             if dimmable:
@@ -1112,6 +1273,7 @@ class RoomEngine:
         self.enabled = enabled
         if not enabled:
             self._clear_goal()
+            self._reentry = None
             self._cancel_pending_on()
             self._end_sequence()
             self._bright_deadline = None
@@ -1204,6 +1366,10 @@ class RoomEngine:
             "deadline": _iso(self.deadline),
             "last_action": self.last_action.as_dict() if self.last_action else None,
             "goal": self._goal.state if self._goal else None,
+            "active_band": band.id if (band := self.active_band()) else None,
+            "effective": dict(
+                zip(("empty_wait", "zone_wait"), self.effective(), strict=True)
+            ),
             "lights": lights,
             "sensor_entities": self.sensor_entities(),
         }

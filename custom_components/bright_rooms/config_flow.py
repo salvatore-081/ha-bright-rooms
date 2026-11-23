@@ -17,6 +17,7 @@ from homeassistant.core import callback
 
 from .const import (
     CONF_NAME,
+    CONF_SCHEDULE,
     DOMAIN,
     ROOM_DEFAULTS,
     SETTINGS_DEFAULTS,
@@ -94,7 +95,7 @@ class RoomSubentryFlow(ConfigSubentryFlow):
             if not errors:
                 return self.async_create_entry(
                     title=room_title(self.hass, user_input),
-                    data=normalize_room(user_input),
+                    data={**normalize_room(user_input), CONF_SCHEDULE: []},
                 )
 
         return self.async_show_form(
@@ -120,7 +121,11 @@ class RoomSubentryFlow(ConfigSubentryFlow):
                     self._get_entry(),
                     subentry,
                     title=room_title(self.hass, user_input),
-                    data=normalize_room(user_input),
+                    # Time bands are edited in the panel: kept as they are.
+                    data={
+                        **normalize_room(user_input),
+                        CONF_SCHEDULE: list(subentry.data.get(CONF_SCHEDULE) or []),
+                    },
                     # Rooms are told apart by name: several may share an area.
                     unique_id=None,
                 )
