@@ -803,8 +803,7 @@ async def test_ambient_held_while_a_light_is_unavailable(
     assert (room.ambient, room.held) == (30, True)
     set_light(hass, STRIP, "off")
     await hass.async_block_till_done()
-    assert room.held is True  # back from unavailable: settling time
-    await advance(hass, freezer, 75, step=5)
+    # Back from unavailable tells only its state: no settling time.
     assert (room.ambient, room.held) == (300, False)
 
 
@@ -1865,3 +1864,138 @@ async def test_band_with_other_zone_sensors(
     await settle(hass)
     assert len(lights.of("turn_off")) == 2
     assert _last(room) == ("turned_off", "empty")
+
+
+# ------------------------------------------------------ undecided darkness
+
+
+async def test_restart_in_daylight_light_reported_off_late(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """The light is unavailable at start and reported off by its integration;
+    someone comes in at once: full daylight, no turn-on."""
+    hass.states.async_set(CEILING, "unavailable")
+    entry, lights = await make(hass, freezer, lux="750", lights=[CEILING])
+    room = kitchen(entry)
+    assert room.dark is None and room.dark_undecided
+    await advance(hass, freezer, 30)
+    set_light(hass, CEILING, "off")
+    await hass.async_block_till_done()
+    assert (room.ambient, room.dark) == (750, False)
+    await advance(hass, freezer, 40)
+    await presence(hass, True)
+    await advance(hass, freezer, 120, step=10)
+    assert lights.calls == []
+    assert _last(room) == ("skipped_on", "not_dark")
+
+
+async def test_restart_with_a_light_on_and_known_contribution(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_storage
+) -> None:
+    entry_id, room_id = (
+        "entry0000000000000000000000000",
+        "room00000000000000000000000000",
+    )
+    hass_storage[f"bright_rooms.{entry_id}"] = {
+        "version": 1,
+        "minor_version": 1,
+        "key": f"bright_rooms.{entry_id}",
+        "data": {
+            "rooms": {
+                room_id: {
+                    "enabled": True,
+                    "contributions": {
+                        CEILING: {"value": 100, "samples": 3, "updated": None}
+                    },
+                }
+            }
+        },
+    }
+    set_light(hass, CEILING, "on")
+    entry, _ = await make(
+        hass, freezer, lux="600", lights=[CEILING], entry_id=entry_id, room_id=room_id
+    )
+    room = kitchen(entry)
+    assert (room.ambient, room.held, room.dark) == (500, False, False)
+
+
+async def test_arrival_waits_for_an_undecided_dark_state(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """No earlier ambient value and a light change during the run: the turn-on
+    waits for the settling time, then decides by the new value."""
+    entry, lights = await make(
+        hass, freezer, lux=None, lights=[CEILING], empty_wait=3600
+    )
+    room = kitchen(entry)
+    set_light(hass, CEILING, "on")
+    set_light(hass, CEILING, "off")  # held for 75 s from now
+    await lux(hass, 500)
+    assert room.dark_undecided
+    await advance(hass, freezer, 5)
+    await presence(hass, True)
+    await advance(hass, freezer, 60, step=5)
+    assert lights.calls == []
+    assert room.last_action is None  # still waiting
+    await advance(hass, freezer, 15, step=5)  # the hold ends: 500 lx
+    await settle(hass)
+    assert room.dark is False
+    assert lights.calls == []
+    assert _last(room) == ("skipped_on", "not_dark")
+
+
+async def test_arrival_waits_then_turns_on_in_the_dark(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(
+        hass, freezer, lux=None, lights=[CEILING], empty_wait=3600
+    )
+    set_light(hass, CEILING, "on")
+    set_light(hass, CEILING, "off")
+    await lux(hass, 10)
+    await presence(hass, True)
+    await settle(hass)
+    assert lights.calls == []
+    await advance(hass, freezer, 75, step=5)
+    await settle(hass)
+    assert [c.service for c in lights.calls] == ["turn_on"]
+    assert _last(kitchen(entry)) == ("turned_on", "presence_dark")
+
+
+async def test_undecided_too_long_counts_as_dark(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """A light stays unavailable (ambient never known): after settle + 15 s."""
+    hass.states.async_set(STRIP, "unavailable")
+    entry, lights = await make(hass, freezer, lux="500")
+    assert kitchen(entry).dark_undecided
+    await presence(hass, True)
+    await advance(hass, freezer, 89)
+    assert lights.calls == []
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert [c.data["entity_id"] for c in lights.calls] == [[CEILING]]
+    assert _last(kitchen(entry)) == ("turned_on", "presence_dark")
+
+
+async def test_unavailable_sensor_counts_as_dark_at_once(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(hass, freezer, lux="500")
+    hass.states.async_set(LUX, "unavailable")
+    await hass.async_block_till_done()
+    room = kitchen(entry)
+    assert room.dark is None and not room.dark_undecided
+    await presence(hass, True)
+    await settle(hass)
+    assert len(lights.of("turn_on")) == 2
+
+
+async def test_no_sensor_always_dark(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(hass, freezer, illuminance_sensor=None)
+    assert not kitchen(entry).dark_undecided
+    await presence(hass, True)
+    await settle(hass)
+    assert len(lights.of("turn_on")) == 2

@@ -88,6 +88,8 @@ GOAL_RETRY_SECONDS: Final = 10
 GOAL_ATTEMPTS: Final = 3
 # Someone back this soon after an empty room's lights went off: back on.
 REENTRY_SECONDS: Final = 10
+# A turn-on waits at most settle_seconds + this for an undecided dark state.
+DARK_WAIT_MARGIN: Final = 15
 
 
 class Status(StrEnum):

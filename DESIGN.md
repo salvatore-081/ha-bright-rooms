@@ -27,14 +27,26 @@ This file is the contract between the backend (`custom_components/bright_rooms`,
   panel. `None` until the first valid measurement (or a value set by hand).
 - **Ambient light** = max(0, raw − Σ over room lights that are on of contribution × fraction), fraction =
   brightness/255 for dimmable lights, 1 for on/off lights. Rounded to an integer.
-  - After any room light changes (on/off, brightness, back from unavailable) the ambient value is **held**
+  - After a room light changes while running (on/off or brightness) the ambient value is **held**
     (previous value kept) for `settle_seconds` (global option, default 75): illuminance sensors report late
     (the SONOFF SNZB-06P24 every ~30 s) and some lamps ramp up.
   - It is also held while a room light is unavailable, or while a light that is on has contribution `None`.
+  - A light that becomes available again (an integration starting up, a dropped connection) does not start
+    a hold: it only tells its state. At startup or reload the ambient light is computed at once from the
+    raw reading when every room light is off, or when every light that is on has a known contribution
+    (states found at startup never start a hold).
   - No raw reading (no sensor, unavailable, not a number) → ambient `None`.
 - **Dark** (hysteresis): `True` when ambient < `dark_below`, `False` when ambient > `bright_above`, otherwise
   unchanged. First value: `True` below `dark_below`, `False` above `bright_above`, in between `True` if below
-  the midpoint. Ambient `None` → dark `None`, which counts as dark for turning on and never as bright.
+  the midpoint. Ambient `None` → dark `None`, never bright; two cases:
+  - **no reading** (no illuminance sensor, or it is unavailable or not a number): counts as dark for turning
+    on;
+  - **undecided** (a reading exists but the ambient light is not known yet: held after a change with no
+    earlier value, a light on with an unknown contribution, a light unavailable): a turn-on (arrival,
+    `light_back`, the recheck after `min_off_seconds`) with `only_when_dark` waits for the decision, at most
+    `settle_seconds` + 15 s from when it started waiting, then applies the normal rules with the decided
+    value; still undecided after that, it counts as dark (like no reading). Light-conditioned bands treat
+    both cases as not met.
 
 ## Room settings (subentry data)
 
@@ -340,6 +352,6 @@ opens the panel room page. Visual editor (title, rooms).
 As Tidy Rooms: `hacs.json` with `zip_release` and `filename: bright_rooms.zip`, minimum Home Assistant
 `2026.10.0`; workflows Tests (pytest with `pytest-homeassistant-custom-component`, frontend lint, typecheck,
 vitest, build), Validate (HACS action, hassfest), Release (checks the tag against `manifest.json` and
-`frontend/package.json`, builds, uploads the zip). Version 0.1.6. `manifest.json`: `single_config_entry`
+`frontend/package.json`, builds, uploads the zip). Version 0.1.7. `manifest.json`: `single_config_entry`
 true, `integration_type` "service", `iot_class` "calculated", `dependencies` ["light"],
 `after_dependencies` ["frontend", "http", "websocket_api"]. Brand icon in `custom_components/bright_rooms/brand`.

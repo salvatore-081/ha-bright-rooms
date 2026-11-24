@@ -85,6 +85,7 @@ from .const import (
     CONF_TRANSITION,
     CONF_ZONE_SENSORS,
     CONF_ZONE_WAIT,
+    DARK_WAIT_MARGIN,
     DIM_TRANSITION,
     DOMAIN,
     GOAL_ATTEMPTS,
@@ -301,6 +302,9 @@ class RoomEngine:
         self._seq: OffSequence | None = None
         self._bright_deadline: datetime | None = None
         self._measurement: Measurement | None = None
+        # A turn-on waiting for an undecided dark state: since when, and why.
+        self._dark_wait_since: datetime | None = None
+        self._dark_wait_reason: Reason | None = None
         self._goal: Goal | None = None
         self._reentry: Reentry | None = None
         # A light was turned off by someone else since the last arrival seen
@@ -507,7 +511,10 @@ class RoomEngine:
                 if entity_id in self._measurement.members
                 else Rejection.OTHER_LIGHT_CHANGED
             )
-        if kind != "unavailable":
+        # Hold the ambient light only when the lamp's output may have changed:
+        # a light that becomes available again (an integration starting up, a
+        # dropped connection) only tells its state.
+        if kind in ("switch", "brightness"):
             self._start_hold(now)
         if kind in ("switch", "brightness") and not self._is_ours(
             entity_id, new, context, now
@@ -638,7 +645,18 @@ class RoomEngine:
 
     def _cancel_pending_on(self) -> None:
         self._pending_on = False
+        self._dark_wait_since = None
         self._cancel("on")
+
+    @property
+    def dark_undecided(self) -> bool:
+        """A reading exists but the ambient light is not known yet.
+
+        Held after a light change with no earlier value, a light that is on
+        with an unknown contribution, or unavailable. Without a reading the
+        room simply counts as dark.
+        """
+        return self.raw_lux is not None and self.ambient is None
 
     def _on_became_dark(self) -> None:
         """Dark arrived with people already in the room: as if they came in now.
@@ -683,6 +701,18 @@ class RoomEngine:
             if reason is None:
                 self._record(Action.SKIPPED_ON, Reason.LIGHTS_ALREADY_ON, now)
             return
+        if self.cfg.only_when_dark and self.dark_undecided:
+            # Wait for the ambient light (settling time), then decide; past the
+            # limit an undecided room counts as dark, like one with no reading.
+            since = self._dark_wait_since = self._dark_wait_since or now
+            limit = float(self.parent.settings[CONF_SETTLE_SECONDS]) + DARK_WAIT_MARGIN
+            left = limit - (now - since).total_seconds()
+            if left > 0:
+                self._pending_on = True
+                self._dark_wait_reason = reason
+                self._schedule("on", left, lambda: self._try_turn_on(reason))
+                return
+        self._dark_wait_since = None
         if self.cfg.only_when_dark and self.dark is False:
             if reason is None:
                 self._record(Action.SKIPPED_ON, Reason.NOT_DARK, now)
@@ -892,6 +922,10 @@ class RoomEngine:
             self._cancel("bright")
         if previous is False and self.dark is True:
             self._on_became_dark()
+        if previous is None and self.dark is not None and self._dark_wait_since:
+            # Decided: the waiting turn-on applies the normal rules now.
+            reason = self._dark_wait_reason
+            self._schedule("on", 0, lambda: self._try_turn_on(reason))
         if previous != self.dark:
             self._check_goal_reason()
             # Bands (of this room or of others) may depend on this room's light.
