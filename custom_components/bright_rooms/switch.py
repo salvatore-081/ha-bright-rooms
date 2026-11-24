@@ -72,7 +72,7 @@ class AreaAutomaticSwitch(SwitchEntity):
             name=f"{TITLE} {name}",
             suggested_area=name,
             entry_type=DeviceEntryType.SERVICE,
-            via_device=(DOMAIN, engine.entry.entry_id),
+            via_device_id=engine.device_id,
         )
 
     async def async_added_to_hass(self) -> None:

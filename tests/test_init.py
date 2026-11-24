@@ -157,3 +157,12 @@ async def test_unload_and_remove(
     await hass.config_entries.async_remove(entry.entry_id)
     await hass.async_block_till_done()
     assert f"{DOMAIN}.{ENTRY}" not in hass_storage
+
+
+async def test_no_deprecated_device_registry_calls(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, caplog
+) -> None:
+    """Home Assistant warns about `via_device` (use `via_device_id`)."""
+    await make(hass, freezer)
+    await hass.async_block_till_done()
+    assert "deprecated" not in caplog.text

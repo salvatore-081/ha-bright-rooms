@@ -55,7 +55,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: BrightRoomsConfigEntry) 
             name=f"{TITLE} {name}",
             suggested_area=name,
             entry_type=dr.DeviceEntryType.SERVICE,
-            via_device=(DOMAIN, entry.entry_id),
+            via_device_id=engine.device_id,
         ).id
     # Rooms left without light zones lose their device.
     keep = {area_device_key(a) for a in engine.area_ids()}
