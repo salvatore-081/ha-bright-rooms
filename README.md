@@ -15,7 +15,7 @@ Most presence automations either ignore daylight or are fooled by their own lamp
 - **Turning off when it becomes bright**: when the ambient light goes from dark to bright and stays bright for some minutes, the lights go off, also with people in the room. Only on that transition: a light turned on by hand when it is already bright stays on.
 - **Lights that drop out**: if a command fails or a light does not follow, Bright Rooms tries again (three times, 10 s apart) and shows *Command failed* until it works. A light that comes back after being unavailable gets what the room wanted (on with someone in the dark, off in an empty room); if someone came in while the lights were unavailable, they turn on when the lights come back.
 - **Back in a moment**: if someone comes back while the lights are going off, or within 10 seconds after, the lights the room just turned off come back on as they were.
-- **Time bands**: each room can have up to 8 bands (for example *dinner, 20:00–23:00*, or *night, 23:00–07:00 on weekdays*) that change how long it waits before turning off: the wait with the room empty and the extra wait for nearby areas. The first band that matches the time wins; outside the bands the room's own values apply. Bands are edited in the panel.
+- **Bands**: each room can have up to 8 bands that change some of its settings while they apply: the presence needed before turning on, the wait with the room empty, the extra wait for nearby areas and which nearby sensors count. A band applies in a time window (for example *dinner, 20:00–23:00*, or *night, 23:00–07:00 on weekdays*), when this room or another room is bright or dark (for example *bright: wait 2 minutes of presence before turning on*), or both. The first band that matches wins; outside the bands the room's own values apply. Bands are edited in the panel.
 - **Your choices win**: a light turned off by hand while the room is occupied is not turned on again until the next time someone comes in. Lights changed by other automations or by hand count as "someone else".
 - **Learning the lamps**: every time a light is switched on or off (by Bright Rooms or by anyone), with little daylight and nothing else changing, Bright Rooms compares the illuminance before and after and updates that light's **contribution** (lux at full brightness). Lights switched together count as one measurement: if their values are known they are scaled together; if only one is unknown, it gets the part the others do not explain. Measurements that look wrong are discarded. Values can also be set by hand.
 - **Ambient light** = sensor reading − the contributions of the room's lights that are on (scaled by their brightness). Illuminance sensors report late, so after a light changes the ambient light is held for a settling time; it is also held while a light is unavailable or not learned yet.
@@ -33,7 +33,7 @@ Most presence automations either ignore daylight or are fooled by their own lamp
 Bright Rooms adds a **Bright Rooms** panel to the sidebar (administrators only), in English and Italian:
 
 - **Overview**: a tile per room with its status, presence, ambient light with the dark and bright thresholds, the lights and their brightness, a countdown to the next step and the last action with its reason.
-- **Rooms**: add, edit and delete rooms. A room is a group of lights with its own presence sensors: several rooms can share an area, for example the cooktop lights and the table lamp of a kitchen, each with its own sensor. A room page shows its live status, its settings and time bands, the **contributions** of its lights (edit a value, or measure it again) and the **settings of its presence sensors** (sensitivity, absence delay, ranges, calibration: the sensors' own controls, shown in place).
+- **Rooms**: add, edit and delete rooms. A room is a group of lights with its own presence sensors: several rooms can share an area, for example the cooktop lights and the table lamp of a kitchen, each with its own sensor. A room page shows its live status, its settings and bands, the **contributions** of its lights (edit a value, or measure it again) and the **settings of its presence sensors** (sensitivity, absence delay, ranges, calibration: the sensors' own controls, shown in place).
 - **Settings**: settling time and how contributions are learned.
 
 ## Card
@@ -92,7 +92,7 @@ For each room (one device per room, "Bright Rooms ‹name›", in the room's are
 | `switch.…_automatic` | Bright Rooms on or off in the room; turning it off stops what is in progress and leaves the lights as they are |
 | `sensor.…_ambient_light` | Ambient light without the room's own lights (lx); attributes: `raw` (sensor reading), `held` |
 | `binary_sensor.…_dark` | On when dark; unknown without a reading |
-| `sensor.…_status` | `disabled`, `off`, `on`, `waiting` (to turn off), `dimmed`; attributes: last action (including `failed`), reason, when, detail of a failure, active time band, next step |
+| `sensor.…_status` | `disabled`, `off`, `on`, `waiting` (to turn off), `dimmed`; attributes: last action (including `failed`), reason, when, detail of a failure, active band, next step |
 | `sensor.…_contribution_‹light›` | Learned contribution of each light (lx, diagnostic); attributes: number of measurements, last update |
 
 ## Development

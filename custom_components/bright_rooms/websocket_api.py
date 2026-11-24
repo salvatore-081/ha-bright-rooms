@@ -244,7 +244,13 @@ async def ws_room_save(
         return
     errors = validate_room(hass, entry, form, current.subentry_id if current else None)
     if CONF_SCHEDULE in msg["data"]:
-        bands, band_errors = validate_schedule(msg["data"][CONF_SCHEDULE])
+        # A light condition may refer to any room of the entry (null: this one).
+        rooms = [
+            sid
+            for sid, sub in entry.subentries.items()
+            if sub.subentry_type == SUBENTRY_ROOM
+        ]
+        bands, band_errors = validate_schedule(msg["data"][CONF_SCHEDULE], rooms)
         errors.update(band_errors)
     else:
         bands = list(current.data.get(CONF_SCHEDULE) or []) if current else []

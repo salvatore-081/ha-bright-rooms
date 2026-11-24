@@ -45,7 +45,7 @@
         "bright_not_above_dark": "Must be higher than the dark threshold.",
         "brightness_lux_order": "Must be higher than the lowest brightness value.",
         "light_in_other_room": "One of these lights already belongs to another room.",
-        "schedule_invalid": "A time band is not valid: check its times, days and waits (at least one)."
+        "schedule_invalid": "A band is not valid: check its time window or light condition, its days and its overrides (at least one)."
       },
       "step": {
         "user": {
@@ -209,7 +209,7 @@
             "name": "Detail"
           },
           "active_band": {
-            "name": "Time band"
+            "name": "Band"
           },
           "deadline": {
             "name": "Next step"

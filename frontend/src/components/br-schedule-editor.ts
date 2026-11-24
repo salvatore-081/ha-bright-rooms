@@ -1,43 +1,68 @@
-// The time bands of a room, in order (the first active one wins): add, edit,
-// move, delete. Plain inputs, so it works before ha-form is loaded.
+// The bands of a room, in order (the first active one wins): add, edit,
+// move, delete. Each band has conditions ("when": a time window and days,
+// the measured light) and overrides ("what changes"). Plain inputs, except
+// the zone sensors, which use ha-form's entity picker when it is loaded.
 
 import { element } from "../define";
 import { LitElement, css, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
+import "./br-switch";
 import { confirmDialog } from "./br-confirm";
 import type { FormatContext } from "../format";
 import {
   DAYS,
   MAX_BANDS,
+  ON_DELAY_MAX,
+  type ScheduleSaveError,
   WAIT_MAX,
   bandErrors,
   bandName,
-  bandRange,
+  bandSummary,
   daysText,
-  overridesText,
-  type ScheduleSaveError,
 } from "../schedule";
 import { shared, tokens } from "../styles";
-import type { Band } from "../types";
+import type { Band, BandLight, HomeAssistant } from "../types";
 
-/** A new band: the evening, every day, with no override yet (one must be set). */
+/** A new band: when it is dark, with no override yet (one must be set). */
 export const newBand = (): Band => ({
   name: null,
-  start: "22:00",
-  end: "06:00",
+  start: null,
+  end: null,
   days: [],
+  light: "dark",
+  light_room: null,
+  on_delay: null,
   empty_wait: null,
   zone_wait: null,
+  zone_sensors: null,
 });
+
+/** The band's time condition is shown (a window or days, even half filled). */
+export const timeOn = (band: Band): boolean =>
+  band.start !== null || band.end !== null || band.days.length > 0;
+
+type NumberKey = "on_delay" | "empty_wait" | "zone_wait";
 
 @element("br-schedule-editor")
 export class BrScheduleEditor extends LitElement {
   @property({ attribute: false }) ctx!: FormatContext;
+  @property({ attribute: false }) hass?: HomeAssistant;
+  /** ha-form is loaded (for the zone sensors picker). */
+  @property({ type: Boolean }) formReady = false;
   @property({ attribute: false }) bands: Band[] = [];
   /** The id of the band in force now. */
   @property({ attribute: false }) activeBand: string | null = null;
-  /** The room's own waits, shown as placeholders. */
-  @property({ attribute: false }) roomWaits = { empty_wait: 30, zone_wait: 150 };
+  /** The room's own values, shown as placeholders. */
+  @property({ attribute: false }) roomValues = {
+    on_delay: 0,
+    empty_wait: 30,
+    zone_wait: 150,
+    zone_sensors: [] as string[],
+  };
+  /** The rooms of the entry, for the light measured in another room. */
+  @property({ attribute: false }) rooms: { id: string; name: string }[] = [];
+  /** The room being edited (undefined for a new room). */
+  @property({ attribute: false }) roomId?: string;
   /** An error of the integration's save: its key and the bands, if known. */
   @property({ attribute: false }) saveError: ScheduleSaveError | null = null;
   /** Show the errors of every band (after a save attempt), not only of touched ones. */
@@ -191,6 +216,48 @@ export class BrScheduleEditor extends LitElement {
         outline: 2px solid var(--br-primary);
         outline-offset: 2px;
       }
+      .group {
+        display: grid;
+        gap: 12px;
+        padding-top: 4px;
+        border-top: 1px solid var(--br-border);
+      }
+      .group h3 {
+        margin: 8px 0 0;
+        font-size: 0.8rem;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--br-muted);
+      }
+      .condition {
+        display: grid;
+        gap: 10px;
+      }
+      .switch-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      label.field.name {
+        max-width: 320px;
+      }
+      select {
+        min-height: 40px;
+        box-sizing: border-box;
+        padding: 0 8px;
+        border-radius: 8px;
+        border: 1px solid var(--br-border);
+        background: var(--br-card-bg);
+        color: var(--br-text);
+        font: inherit;
+        font-size: 1rem;
+        width: 100%;
+      }
+      select:focus-visible {
+        outline: 2px solid var(--br-primary);
+        outline-offset: 1px;
+      }
       .hint {
         color: var(--br-muted);
         font-size: 0.85rem;
@@ -217,6 +284,10 @@ export class BrScheduleEditor extends LitElement {
       }
     `,
   ];
+
+  private get _roomNames(): Record<string, string> {
+    return Object.fromEntries(this.rooms.map((r) => [r.id, r.name]));
+  }
 
   render() {
     const { t } = this.ctx;
@@ -254,7 +325,6 @@ export class BrScheduleEditor extends LitElement {
 
   private _band(band: Band, i: number) {
     const { t } = this.ctx;
-    const n = i + 1;
     const name = bandName(band, i, t);
     const shown = this.showErrors || this._touched.has(band);
     const errors = shown ? bandErrors(band) : [];
@@ -262,8 +332,11 @@ export class BrScheduleEditor extends LitElement {
     const failed = errors.length > 0 || Boolean(fromSave);
     const open = failed || this._open.has(band) || !band.id;
     const active = Boolean(band.id) && band.id === this.activeBand;
-    const overrides = overridesText(band, t);
     const bodyId = `band-${i}`;
+    const summary = bandSummary(band, this.ctx, {
+      roomNames: this._roomNames,
+      roomId: this.roomId,
+    });
     return html`<div
       class="band ${open ? "open" : ""} ${active ? "active" : ""} ${failed ? "error" : ""}"
     >
@@ -286,10 +359,7 @@ export class BrScheduleEditor extends LitElement {
                   : nothing
               }
             </span>
-            <span class="summary"
-              >${bandRange(band, this.ctx)}${overrides ? ` · ${overrides}` : ""}</span
-            >
-            <span class="chips">${this._dayChips(band)}</span>
+            <span class="summary">${summary}</span>
           </span>
         </button>
         <button
@@ -320,115 +390,249 @@ export class BrScheduleEditor extends LitElement {
           <ha-icon icon="mdi:delete-outline"></ha-icon>
         </button>
       </div>
-      ${open ? this._body(band, i, n, errors, fromSave, bodyId) : nothing}
+      ${open ? this._body(band, i, errors, fromSave, bodyId) : nothing}
     </div>`;
   }
 
-  private _dayChips(band: Band) {
+  private _body(band: Band, i: number, errors: string[], fromSave: string, id: string) {
     const { t } = this.ctx;
-    if (!band.days.length || band.days.length === DAYS.length)
-      return html`<span class="chip day">${t("band.every_day")}</span>`;
-    return daysText(band.days, t)
-      .split(", ")
-      .map((part) => html`<span class="chip day">${part}</span>`);
-  }
-
-  private _body(band: Band, i: number, n: number, errors: string[], fromSave: string, id: string) {
-    const { t } = this.ctx;
-    const wait = (v: number | null) => (v === null || v === undefined ? "" : String(v));
-    const has = (key: string) => errors.includes(key);
     return html`<div class="body" id=${id}>
-      <div class="fields">
-        <label class="field"
-          >${t("band.field_name")}
-          <input
-            .value=${band.name ?? ""}
-            placeholder=${t("band.n", { n })}
-            maxlength="40"
-            ?disabled=${this.disabled}
-            @input=${(ev: Event) => this._set(i, { name: (ev.target as HTMLInputElement).value })}
-          />
-        </label>
-        <label class="field"
-          >${t("band.field_start")}
-          <input
-            type="time"
-            required
-            .value=${band.start}
-            aria-invalid=${has("start") ? "true" : "false"}
-            ?disabled=${this.disabled}
-            @change=${(ev: Event) => this._set(i, { start: (ev.target as HTMLInputElement).value })}
-          />
-        </label>
-        <label class="field"
-          >${t("band.field_end")}
-          <input
-            type="time"
-            required
-            .value=${band.end}
-            aria-invalid=${has("end") ? "true" : "false"}
-            ?disabled=${this.disabled}
-            @change=${(ev: Event) => this._set(i, { end: (ev.target as HTMLInputElement).value })}
-          />
-        </label>
-      </div>
-      <fieldset>
-        <legend>${t("band.field_days")}</legend>
-        <div class="chips">
-          ${DAYS.map(
-            (day) =>
-              html`<button
-                class="day-toggle"
-                aria-pressed=${band.days.includes(day) ? "true" : "false"}
-                ?disabled=${this.disabled}
-                @click=${() => this._toggleDay(i, day)}
-              >
-                ${t(`day.${day}`)}
-              </button>`,
-          )}
+      <label class="field name"
+        >${t("band.field_name")}
+        <input
+          .value=${band.name ?? ""}
+          placeholder=${t("band.n", { n: i + 1 })}
+          maxlength="40"
+          ?disabled=${this.disabled}
+          @input=${(ev: Event) => this._set(i, { name: (ev.target as HTMLInputElement).value })}
+        />
+      </label>
+      <section class="group when">
+        <h3>${t("band.when")}</h3>
+        ${this._time(band, i, errors)} ${this._light(band, i, errors)}
+      </section>
+      <section class="group what">
+        <h3>${t("band.what")}</h3>
+        <div class="fields">
+          ${this._number(band, i, "on_delay", ON_DELAY_MAX, errors)}
+          ${this._number(band, i, "empty_wait", WAIT_MAX, errors)}
+          ${this._number(band, i, "zone_wait", WAIT_MAX, errors)}
         </div>
-      </fieldset>
-      <div class="fields">
-        <label class="field"
-          >${t("band.field_empty_wait")}
-          <input
-            type="number"
-            inputmode="numeric"
-            min="0"
-            max=${WAIT_MAX}
-            step="1"
-            .value=${wait(band.empty_wait)}
-            placeholder=${t("band.room_value", { value: this.roomWaits.empty_wait })}
-            aria-invalid=${has("no_override") || has("wait_range") ? "true" : "false"}
-            ?disabled=${this.disabled}
-            @input=${(ev: Event) => this._setWait(i, "empty_wait", ev)}
-          />
-        </label>
-        <label class="field"
-          >${t("band.field_zone_wait")}
-          <input
-            type="number"
-            inputmode="numeric"
-            min="0"
-            max=${WAIT_MAX}
-            step="1"
-            .value=${wait(band.zone_wait)}
-            placeholder=${t("band.room_value", { value: this.roomWaits.zone_wait })}
-            aria-invalid=${has("no_override") || has("wait_range") ? "true" : "false"}
-            ?disabled=${this.disabled}
-            @input=${(ev: Event) => this._setWait(i, "zone_wait", ev)}
-          />
-        </label>
-      </div>
-      <div class="hint">${t("band.overrides_hint")}</div>
+        ${this._zones(band, i)}
+        <div class="hint">${t("band.overrides_hint")}</div>
+      </section>
       ${
         errors.length || fromSave
           ? html`<ul class="errors" role="alert">
-              ${errors.map((e) => html`<li>${t(`band_error.${e}`, { max: WAIT_MAX })}</li>`)}
+              ${errors.map(
+                (e) =>
+                  html`<li>${t(`band_error.${e}`, { max: WAIT_MAX, max_on: ON_DELAY_MAX })}</li>`,
+              )}
               ${fromSave ? html`<li>${fromSave}</li>` : nothing}
             </ul>`
           : nothing
       }
+    </div>`;
+  }
+
+  private _switchRow(label: string, checked: boolean, change: (on: boolean) => void) {
+    return html`<div class="switch-row">
+      <br-switch
+        .checked=${checked}
+        .label=${label}
+        .disabled=${this.disabled}
+        @change=${(ev: CustomEvent<{ checked: boolean }>) => change(ev.detail.checked)}
+      ></br-switch>
+      <span aria-hidden="true">${label}</span>
+    </div>`;
+  }
+
+  private _time(band: Band, i: number, errors: string[]) {
+    const { t } = this.ctx;
+    const on = timeOn(band);
+    const has = (key: string) => errors.includes(key) || errors.includes("time_pair");
+    return html`<div class="condition time">
+      ${this._switchRow(t("band.time"), on, (checked) =>
+        this._set(
+          i,
+          checked
+            ? { start: band.start ?? "17:00", end: band.end ?? "23:00" }
+            : { start: null, end: null, days: [] },
+        ),
+      )}
+      ${
+        on
+          ? html`<div class="fields">
+                <label class="field"
+                  >${t("band.field_start")}
+                  <input
+                    type="time"
+                    .value=${band.start ?? ""}
+                    aria-invalid=${has("start") ? "true" : "false"}
+                    ?disabled=${this.disabled}
+                    @change=${(ev: Event) =>
+                      this._set(i, { start: (ev.target as HTMLInputElement).value })}
+                  />
+                </label>
+                <label class="field"
+                  >${t("band.field_end")}
+                  <input
+                    type="time"
+                    .value=${band.end ?? ""}
+                    aria-invalid=${has("end") ? "true" : "false"}
+                    ?disabled=${this.disabled}
+                    @change=${(ev: Event) =>
+                      this._set(i, { end: (ev.target as HTMLInputElement).value })}
+                  />
+                </label>
+              </div>
+              <fieldset>
+                <legend>${t("band.field_days")} · ${daysText(band.days, t)}</legend>
+                <div class="chips">
+                  ${DAYS.map(
+                    (day) =>
+                      html`<button
+                        class="day-toggle"
+                        aria-pressed=${band.days.includes(day) ? "true" : "false"}
+                        ?disabled=${this.disabled}
+                        @click=${() => this._toggleDay(i, day)}
+                      >
+                        ${t(`day.${day}`)}
+                      </button>`,
+                  )}
+                </div>
+              </fieldset>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private _light(band: Band, i: number, errors: string[]) {
+    const { t } = this.ctx;
+    const others = this.rooms.filter((r) => r.id !== this.roomId);
+    const lightRoom = band.light_room === this.roomId ? null : band.light_room;
+    return html`<div class="fields condition light">
+      <label class="field"
+        >${t("band.field_light")}
+        <select
+          class="light-select"
+          aria-invalid=${errors.includes("light") ? "true" : "false"}
+          ?disabled=${this.disabled}
+          @change=${(ev: Event) => {
+            const value = (ev.target as HTMLSelectElement).value as BandLight | "";
+            this._set(i, value ? { light: value } : { light: null, light_room: null });
+          }}
+        >
+          <option value="" ?selected=${!band.light}>${t("band.light_any")}</option>
+          <option value="bright" ?selected=${band.light === "bright"}>
+            ${t("band.light_bright_option")}
+          </option>
+          <option value="dark" ?selected=${band.light === "dark"}>
+            ${t("band.light_dark_option")}
+          </option>
+        </select>
+      </label>
+      ${
+        band.light
+          ? html`<label class="field"
+              >${t("band.field_light_room")}
+              <select
+                class="room-select"
+                ?disabled=${this.disabled}
+                @change=${(ev: Event) =>
+                  this._set(i, { light_room: (ev.target as HTMLSelectElement).value || null })}
+              >
+                <option value="" ?selected=${!lightRoom}>${t("band.this_room")}</option>
+                ${others.map(
+                  (r) =>
+                    html`<option value=${r.id} ?selected=${lightRoom === r.id}>${r.name}</option>`,
+                )}
+                ${
+                  lightRoom && !others.some((r) => r.id === lightRoom)
+                    ? html`<option value=${lightRoom} selected>${t("band.other_room")}</option>`
+                    : nothing
+                }
+              </select>
+            </label>`
+          : nothing
+      }
+    </div>`;
+  }
+
+  private _number(band: Band, i: number, key: NumberKey, max: number, errors: string[]) {
+    const { t } = this.ctx;
+    const value = band[key];
+    const bad =
+      errors.includes("no_override") ||
+      (key === "on_delay" ? errors.includes("on_delay_range") : errors.includes("wait_range"));
+    return html`<label class="field"
+      >${t(`band.field_${key}`)}
+      <input
+        type="number"
+        inputmode="numeric"
+        min="0"
+        max=${max}
+        step="1"
+        data-key=${key}
+        .value=${value === null || value === undefined ? "" : String(value)}
+        placeholder=${t("band.room_value", { value: this.roomValues[key] })}
+        aria-invalid=${bad ? "true" : "false"}
+        ?disabled=${this.disabled}
+        @input=${(ev: Event) => {
+          const text = (ev.target as HTMLInputElement).value.trim();
+          const n = text === "" ? null : Number(text);
+          this._set(i, { [key]: n === null || Number.isNaN(n) ? null : n });
+        }}
+      />
+    </label>`;
+  }
+
+  private _zones(band: Band, i: number) {
+    const { t } = this.ctx;
+    const on = band.zone_sensors !== null;
+    const zones = band.zone_sensors ?? [];
+    const own = this.roomValues.zone_sensors.length
+      ? t("band.zone_room", { n: this.roomValues.zone_sensors.length })
+      : t("band.zone_room_none");
+    return html`<div class="zones">
+      ${this._switchRow(t("band.zone_override"), on, (checked) =>
+        this._set(i, { zone_sensors: checked ? [...this.roomValues.zone_sensors] : null }),
+      )}
+      ${
+        !on
+          ? html`<div class="hint">${own}</div>`
+          : this.formReady && this.hass
+            ? html`<ha-form
+                .hass=${this.hass}
+                .data=${{ zone_sensors: zones }}
+                .schema=${[
+                  {
+                    name: "zone_sensors",
+                    selector: { entity: { filter: { domain: "binary_sensor" }, multiple: true } },
+                  },
+                ]}
+                .computeLabel=${() => t("band.field_zone_sensors")}
+                .disabled=${this.disabled}
+                @value-changed=${(ev: CustomEvent<{ value: { zone_sensors?: string[] } }>) =>
+                  this._set(i, { zone_sensors: ev.detail.value.zone_sensors ?? [] })}
+              ></ha-form>`
+            : html`<label class="field"
+                >${t("band.field_zone_sensors_text")}
+                <input
+                  class="zone-text"
+                  .value=${zones.join(", ")}
+                  placeholder="binary_sensor.…"
+                  ?disabled=${this.disabled}
+                  @change=${(ev: Event) =>
+                    this._set(i, {
+                      zone_sensors: (ev.target as HTMLInputElement).value
+                        .split(/[\s,]+/)
+                        .filter(Boolean),
+                    })}
+                />
+              </label>`
+      }
+      ${on && zones.length === 0 ? html`<div class="hint">${t("band.zone_none_hint")}</div>` : nothing}
     </div>`;
   }
 
@@ -443,12 +647,6 @@ export class BrScheduleEditor extends LitElement {
     if (this._open.has(old)) this._open = new Set([...this._open, band]);
     this._touched = new Set([...this._touched, band]);
     this._emit(this.bands.map((b, i) => (i === index ? band : b)));
-  }
-
-  private _setWait(index: number, key: "empty_wait" | "zone_wait", ev: Event) {
-    const text = (ev.target as HTMLInputElement).value.trim();
-    const value = text === "" ? null : Number(text);
-    this._set(index, { [key]: value === null || Number.isNaN(value) ? null : value });
   }
 
   private _toggleDay(index: number, day: string) {

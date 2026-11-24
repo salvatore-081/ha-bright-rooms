@@ -23,7 +23,7 @@ import {
   statusLabel,
   statusTone,
 } from "../format";
-import { activeBand, bandName, effectiveWaits, formatSeconds } from "../schedule";
+import { activeBand, bandName, effectiveValues, formatSeconds, zoneText } from "../schedule";
 import { shared, tokens } from "../styles";
 import type { LightSnapshot, RoomSnapshot } from "../types";
 
@@ -313,22 +313,34 @@ export class BrRoomTile extends LitElement {
     `;
   }
 
-  /** The wait before turning off in force, and the time band that sets it. */
+  /** The active band and what it changes, or the room's wait before turning off. */
   private _wait() {
     const { t } = this.ctx;
     const r = this.room;
-    const wait = formatSeconds(effectiveWaits(r).empty_wait);
+    const eff = effectiveValues(r);
     const active = activeBand(r);
-    return active
-      ? html`<div class="wait band">
-          <ha-icon icon="mdi:clock-time-four-outline"></ha-icon>${t("room.band_wait", {
-            band: bandName(active.band, active.index, t),
-            wait,
-          })}
-        </div>`
-      : html`<div class="wait">
-          <ha-icon icon="mdi:timer-sand"></ha-icon>${t("room.wait", { wait })}
-        </div>`;
+    if (!active)
+      return html`<div class="wait">
+        <ha-icon icon="mdi:timer-sand"></ha-icon>${t("room.wait", {
+          wait: formatSeconds(eff.empty_wait),
+        })}
+      </div>`;
+    const changes = [
+      eff.on_delay > 0 || active.band.on_delay !== null
+        ? t("band.on_delay", { wait: formatSeconds(eff.on_delay) })
+        : "",
+      t("band.empty_wait", { wait: formatSeconds(eff.empty_wait) }),
+      active.band.zone_wait !== null
+        ? t("band.zone_wait", { wait: formatSeconds(eff.zone_wait) })
+        : "",
+      zoneText(active.band.zone_sensors, t),
+    ].filter(Boolean);
+    return html`<div class="wait band">
+      <ha-icon icon="mdi:tune-vertical"></ha-icon>${t("room.band", {
+        band: bandName(active.band, active.index, t),
+      })}
+      · ${changes.join(" · ")}
+    </div>`;
   }
 
   private _open() {

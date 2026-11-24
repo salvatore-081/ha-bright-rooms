@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from types import MappingProxyType
+
 from freezegun.api import FrozenDateTimeFactory
+from homeassistant.config_entries import ConfigSubentry
 from homeassistant.core import Context, HomeAssistant
+from homeassistant.helpers import area_registry as ar
 
 from custom_components.bright_rooms.const import (
     CONF_BRIGHTNESS_MIN,
@@ -11,6 +15,7 @@ from custom_components.bright_rooms.const import (
     CONF_ON_DELAY,
     CONF_ONLY_WHEN_DARK,
     CONF_OTHER_LIGHTS,
+    ROOM_DEFAULTS,
 )
 from custom_components.bright_rooms.engine import RoomConfig
 
@@ -1356,7 +1361,12 @@ async def test_band_overrides_the_empty_wait(
     )
     room = kitchen(entry)
     assert room.active_band().id == "eve"
-    assert room.effective() == (120, 150)
+    assert room.effective() == {
+        "on_delay": 0,
+        "empty_wait": 120,
+        "zone_wait": 150,
+        "zone_sensors": [ZONE],
+    }
     await presence(hass, False)
     await advance(hass, freezer, 119, step=7)
     assert lights.calls == []
@@ -1370,7 +1380,8 @@ async def test_band_partial_override_and_zone_wait(
 ) -> None:
     band = {**BAND_EVENING, "empty_wait": None, "zone_wait": 20}
     entry, lights = await _lights_on(hass, freezer, dim_percent=100, schedule=[band])
-    assert kitchen(entry).effective() == (30, 20)
+    eff = kitchen(entry).effective()
+    assert (eff["empty_wait"], eff["zone_wait"]) == (30, 20)
     hass.states.async_set(ZONE, "on")
     await presence(hass, False)
     await advance(hass, freezer, 20)  # zone wait over, then the room's 30 s
@@ -1406,14 +1417,16 @@ async def test_band_shown_on_the_status_sensor(
     assert hass.states.get(status).attributes["active_band"] == "20:00–20:15"
     snap = kitchen(entry).snapshot()
     assert snap["active_band"] == "eve"
-    assert snap["effective"] == {"empty_wait": 120, "zone_wait": 150}
+    assert snap["effective"] == {
+        "on_delay": 0,
+        "empty_wait": 120,
+        "zone_wait": 150,
+        "zone_sensors": [ZONE],
+    }
     # The band ends at 20:15: the sensor updates by itself.
     await advance(hass, freezer, 300, step=60)
     assert hass.states.get(status).attributes["active_band"] is None
-    assert kitchen(entry).snapshot()["effective"] == {
-        "empty_wait": 30,
-        "zone_wait": 150,
-    }
+    assert kitchen(entry).snapshot()["effective"]["empty_wait"] == 30
 
 
 # ----------------------------------------------------------------- re-entry
@@ -1656,3 +1669,199 @@ async def test_someone_back_while_the_waits_run(
     await advance(hass, freezer, 120, step=10)
     assert lights.calls == []
     assert kitchen(entry).status == "on"
+
+
+# -------------------------------------------------------- bands on light
+
+LIVING_LUX = "sensor.living_illuminance"
+HALL = "binary_sensor.hall_presence"
+
+
+def _room_named(entry, title: str):
+    return next(r for r in entry.runtime_data.rooms.values() if r.title == title)
+
+
+async def _with_living(hass, freezer, band, **room):
+    """The kitchen, plus a living room; `band(living_id)` is the kitchen's band."""
+    entry, lights = await make(hass, freezer, **room)
+    hass.states.async_set(LIVING_LUX, "10", {"device_class": "illuminance"})
+    hass.states.async_set("binary_sensor.living_presence", "off")
+    area = ar.async_get(hass).async_create("Living")
+    living = ConfigSubentry(
+        data=MappingProxyType(
+            {
+                **ROOM_DEFAULTS,
+                "name": "Living",
+                "area": area.id,
+                "presence_sensors": ["binary_sensor.living_presence"],
+                "lights": [OTHER],
+                "illuminance_sensor": LIVING_LUX,
+                "schedule": [],
+            }
+        ),
+        subentry_type="room",
+        title="Living",
+        unique_id=None,
+    )
+    hass.config_entries.async_add_subentry(entry, living)
+    await hass.async_block_till_done()
+    sub = next(s for s in entry.subentries.values() if s.title == "Kitchen")
+    hass.config_entries.async_update_subentry(
+        entry, sub, data={**sub.data, "schedule": [band(living.subentry_id)]}
+    )
+    await hass.async_block_till_done()
+    return entry, lights, living.subentry_id
+
+
+async def test_band_on_another_rooms_light(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, _, _living_id = await _with_living(
+        hass,
+        freezer,
+        lambda living: {
+            "id": "b",
+            "name": None,
+            "light": "dark",
+            "light_room": living,
+            "empty_wait": 300,
+        },
+    )
+    room = _room_named(entry, "Kitchen")
+    status = "sensor.kitchen_bright_rooms_kitchen_status"
+    assert room.active_band().id == "b"
+    assert room.effective()["empty_wait"] == 300
+    assert hass.states.get(status).attributes["active_band"] == "dark"
+    hass.states.async_set(LIVING_LUX, "500", {"device_class": "illuminance"})
+    await hass.async_block_till_done()
+    # The living room is bright now: the kitchen's band ends at once.
+    assert _room_named(entry, "Living").dark is False
+    assert room.active_band() is None
+    assert hass.states.get(status).attributes["active_band"] is None
+    assert room.snapshot()["effective"]["empty_wait"] == 30
+
+
+async def test_band_on_another_rooms_light_updates_subscriptions(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_ws_client
+) -> None:
+    client = await hass_ws_client(hass)
+    _entry, _, _ = await _with_living(
+        hass,
+        freezer,
+        lambda living: {
+            "id": "b",
+            "light": "dark",
+            "light_room": living,
+            "on_delay": 60,
+        },
+    )
+    await client.send_json_auto_id({"type": "bright_rooms/subscribe"})
+    assert (await client.receive_json())["success"]
+    event = (await client.receive_json())["event"]
+    kitchen_snap = next(r for r in event["rooms"] if r["name"] == "Kitchen")
+    assert kitchen_snap["active_band"] == "b"
+    await advance(hass, freezer, 1)
+    hass.states.async_set(LIVING_LUX, "500", {"device_class": "illuminance"})
+    await hass.async_block_till_done()
+    await advance(hass, freezer, 1)
+    event = (await client.receive_json())["event"]
+    kitchen_snap = next(r for r in event["rooms"] if r["name"] == "Kitchen")
+    assert kitchen_snap["active_band"] is None
+    assert kitchen_snap["effective"]["on_delay"] == 0
+
+
+async def test_on_delay_by_day_and_evening(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """Bright: 120 s of presence before turning on; dark: the room's 0 s."""
+    band = {"id": "day", "light": "bright", "on_delay": 120}
+    entry, lights = await make(
+        hass, freezer, lux="500", schedule=[band], **{CONF_ONLY_WHEN_DARK: False}
+    )
+    assert kitchen(entry).effective()["on_delay"] == 120
+    await presence(hass, True)
+    await advance(hass, freezer, 119, step=7)
+    assert lights.calls == []
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert len(lights.of("turn_on")) == 2
+
+
+async def test_on_delay_band_inactive_in_the_dark(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    band = {"id": "day", "light": "bright", "on_delay": 120}
+    entry, lights = await make(hass, freezer, schedule=[band])
+    assert kitchen(entry).active_band() is None
+    await presence(hass, True)
+    await settle(hass)
+    assert len(lights.of("turn_on")) == 2
+
+
+async def test_light_band_with_unknown_dark(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    band = {"id": "dark", "light": "dark", "on_delay": 120}
+    entry, lights = await make(hass, freezer, lux=None, schedule=[band])
+    assert kitchen(entry).dark is None
+    assert kitchen(entry).active_band() is None
+    await presence(hass, True)
+    await settle(hass)
+    assert len(lights.of("turn_on")) == 2
+
+
+async def test_light_and_time_band_in_the_engine(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    band = {
+        "id": "x",
+        "start": "18:00",
+        "end": "23:00",
+        "light": "dark",
+        "empty_wait": 120,
+    }
+    entry, _ = await make(hass, freezer, schedule=[band])
+    room = kitchen(entry)
+    assert room.active_band().id == "x"  # 20:10, dark
+    status = "sensor.kitchen_bright_rooms_kitchen_status"
+    assert hass.states.get(status).attributes["active_band"] == "18:00–23:00 · dark"
+    await lux(hass, 500)
+    assert room.active_band() is None
+    assert hass.states.get(status).attributes["active_band"] is None
+
+
+async def test_band_without_zone(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """`zone_sensors: []`: no zone wait in this band."""
+    band = {**BAND_EVENING, "empty_wait": None, "zone_sensors": []}
+    entry, lights = await _lights_on(hass, freezer, dim_percent=100, schedule=[band])
+    assert kitchen(entry).effective()["zone_sensors"] == []
+    hass.states.async_set(ZONE, "on")
+    await presence(hass, False)
+    await advance(hass, freezer, 30)
+    await settle(hass)
+    assert len(lights.of("turn_off")) == 2
+    assert _last(kitchen(entry)) == ("turned_off", "empty")
+
+
+async def test_band_with_other_zone_sensors(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    hass.states.async_set(HALL, "off")
+    band = {**BAND_EVENING, "empty_wait": None, "zone_sensors": [HALL]}
+    entry, lights = await _lights_on(hass, freezer, dim_percent=100, schedule=[band])
+    room = kitchen(entry)
+    hass.states.async_set(ZONE, "on")  # not watched in this band
+    hass.states.async_set(HALL, "on")
+    await presence(hass, False)
+    assert room.status == "waiting" and room.zone_occupied
+    await advance(hass, freezer, 60, step=10)
+    hass.states.async_set(HALL, "off")  # the hall empties: the empty wait starts
+    await hass.async_block_till_done()
+    await advance(hass, freezer, 29)
+    assert lights.calls == []
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert len(lights.of("turn_off")) == 2
+    assert _last(room) == ("turned_off", "empty")

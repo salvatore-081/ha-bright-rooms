@@ -1,6 +1,6 @@
 [project]
 name = "bright-rooms"
-version = "0.1.5"
+version = "0.1.6"
 description = "Home Assistant integration: room lights switched by presence and by the ambient light without the room's own lights."
 requires-python = ">=3.14"
 license = "MIT"

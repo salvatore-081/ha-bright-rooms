@@ -31,19 +31,31 @@ export interface LastAction {
   detail?: string | null;
 }
 
-/** A time band of a room: the waits before turning off, overridden between two times. */
+export type BandLight = "bright" | "dark";
+
+/**
+ * A band of a room: overrides of the room's settings while its conditions
+ * hold (a time window, the days, the measured light). The first active one wins.
+ */
 export interface Band {
   /** Missing on a band not saved yet (the integration generates it). */
   id?: string;
   name: string | null;
-  /** "HH:MM"; a band whose end is at or before its start crosses midnight. */
-  start: string;
-  end: string;
+  /** "HH:MM", both or neither; a window whose end is at or before its start crosses midnight. */
+  start: string | null;
+  end: string | null;
   /** "mon"…"sun"; empty: every day. */
   days: string[];
-  /** Seconds; null: the room's own value. At least one is set. */
+  /** Holds when the dark state of `light_room` is False ("bright") or True ("dark"). */
+  light: BandLight | null;
+  /** The room whose light counts; null: this room. */
+  light_room: string | null;
+  /** Overrides; null: the room's own value. At least one is set. */
+  on_delay: number | null;
   empty_wait: number | null;
   zone_wait: number | null;
+  /** Nearby presence sensors in this band; [] no zone; null the room's own. */
+  zone_sensors: string[] | null;
 }
 
 /** The settings of a room (subentry data), as in DESIGN.md § Room settings. */
@@ -113,8 +125,13 @@ export interface RoomSnapshot {
   goal?: "on" | "off" | null;
   /** The id of the time band in force, if any. */
   active_band?: string | null;
-  /** The waits in force (the active band's, or the room's). */
-  effective?: { empty_wait: number; zone_wait: number };
+  /** The values in force (the active band's, or the room's). */
+  effective?: {
+    on_delay: number;
+    empty_wait: number;
+    zone_wait: number;
+    zone_sensors: string[];
+  };
   lights: LightSnapshot[];
   /** Settings of the presence sensors' devices (number, select, switch, button). */
   sensor_entities: string[];

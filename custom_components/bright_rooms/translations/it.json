@@ -45,7 +45,7 @@
         "bright_not_above_dark": "Deve essere più alta della soglia del buio.",
         "brightness_lux_order": "Deve essere più alta del valore della luminosità minima.",
         "light_in_other_room": "Una di queste luci è già in un'altra stanza.",
-        "schedule_invalid": "Una fascia oraria non è valida: controlla orari, giorni e attese (almeno una)."
+        "schedule_invalid": "Una fascia non è valida: controlla orari o condizione di luce, giorni e valori (almeno uno)."
       },
       "step": {
         "user": {
@@ -209,7 +209,7 @@
             "name": "Dettaglio"
           },
           "active_band": {
-            "name": "Fascia oraria"
+            "name": "Fascia"
           },
           "deadline": {
             "name": "Prossimo passo"

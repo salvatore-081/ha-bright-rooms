@@ -1,17 +1,20 @@
-// Time bands of a room (config key `schedule`): formatting and validation.
-// The first active band in list order sets the waits before turning off;
-// outside the bands the room's own values apply.
+// Bands of a room (config key `schedule`): formatting and validation.
+// A band holds in a time window, with a given measured light, or both; the
+// first active band in list order overrides some room settings, and outside
+// the bands the room's own values apply.
 
 import type { FormatContext } from "./format";
 import type { Localize } from "./localize";
-import type { Band, RoomSnapshot } from "./types";
+import type { Band, BandLight, RoomSnapshot } from "./types";
 
 export const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 export type Day = (typeof DAYS)[number];
 
 export const MAX_BANDS = 8;
-/** Limits of the waits, as the room's own empty_wait and zone_wait. */
+/** Limits of the overrides, as the room's own settings (seconds). */
 export const WAIT_MAX = 3600;
+export const ON_DELAY_MAX = 600;
+export const LIGHTS: readonly BandLight[] = ["bright", "dark"];
 
 const CLOCK = /^([01]\d|2[0-3]):([0-5]\d)(:[0-5]\d)?$/;
 
@@ -38,15 +41,22 @@ export const formatClock = (value: string | null | undefined, ctx: FormatContext
   }).format(date);
 };
 
-/** True when the band ends at or before its start, so it ends the next day. */
+const none = (v: unknown) => v === null || v === undefined;
+
+/** The band has a time window (start and end both set). */
+export const hasWindow = (band: Pick<Band, "start" | "end">): boolean =>
+  Boolean(band.start) && Boolean(band.end);
+
+/** True when the window ends at or before its start, so it ends the next day. */
 export const crossesMidnight = (band: Pick<Band, "start" | "end">): boolean => {
   const start = clockMinutes(band.start);
   const end = clockMinutes(band.end);
   return start !== null && end !== null && end <= start;
 };
 
-/** "07:00–09:30", or "22:00–06:00 next day" for a band that crosses midnight. */
+/** "07:00–09:30", "22:00–06:00 next day"; "" without a window. */
 export const bandRange = (band: Pick<Band, "start" | "end">, ctx: FormatContext): string => {
+  if (!hasWindow(band)) return "";
   const params = { start: formatClock(band.start, ctx), end: formatClock(band.end, ctx) };
   return ctx.t(crossesMidnight(band) ? "band.range_overnight" : "band.range", params);
 };
@@ -73,6 +83,9 @@ export const daysText = (days: readonly string[] | null | undefined, t: Localize
   return parts.join(", ");
 };
 
+const someDays = (days: readonly string[] | null | undefined) =>
+  (days?.length ?? 0) > 0 && (days?.length ?? 0) < DAYS.length;
+
 /** "45 s", "2 min", "1 min 30 s". */
 export const formatSeconds = (seconds: number): string => {
   const s = Math.max(0, Math.round(seconds));
@@ -82,35 +95,83 @@ export const formatSeconds = (seconds: number): string => {
   return rest ? `${m} min ${rest} s` : `${m} min`;
 };
 
-/** "wait 90 s · nearby rooms 5 min": the band's overrides. */
+export interface SummaryOptions {
+  /** Names of the rooms, by id (for a light measured in another room). */
+  roomNames?: Record<string, string>;
+  /** The room the band belongs to: its own id as light_room counts as "this room". */
+  roomId?: string;
+}
+
+/** "Dark", "Dark (Table)", "Bright"; "" without a light condition. */
+export const lightText = (band: Band, t: Localize, opts: SummaryOptions = {}): string => {
+  if (!band.light) return "";
+  const text = t(`band.light_${band.light}`);
+  if (!band.light_room || band.light_room === opts.roomId) return text;
+  const room = opts.roomNames?.[band.light_room] ?? t("band.other_room");
+  return `${text} (${room})`;
+};
+
+/** "Dark (Table) · Mon–Fri 17:00–23:00": when the band holds. */
+export const conditionsText = (band: Band, ctx: FormatContext, opts: SummaryOptions = {}) => {
+  const { t } = ctx;
+  const time = [someDays(band.days) ? daysText(band.days, t) : "", bandRange(band, ctx)]
+    .filter(Boolean)
+    .join(" ");
+  return [lightText(band, t, opts), time].filter(Boolean).join(" · ") || t("band.always");
+};
+
+/** "zone: none", "zones: 2"; "" when the room's own zone applies. */
+export const zoneText = (zones: readonly string[] | null | undefined, t: Localize): string =>
+  zones === null || zones === undefined
+    ? ""
+    : zones.length === 0
+      ? t("band.zone_none")
+      : t("band.zone_count", { n: zones.length });
+
+/** "on after 20 s · wait 90 s · zone wait 5 min · zone: none": what the band changes. */
 export const overridesText = (band: Band, t: Localize): string =>
   [
-    band.empty_wait !== null && band.empty_wait !== undefined
-      ? t("band.empty_wait", { wait: formatSeconds(band.empty_wait) })
-      : "",
-    band.zone_wait !== null && band.zone_wait !== undefined
-      ? t("band.zone_wait", { wait: formatSeconds(band.zone_wait) })
-      : "",
+    none(band.on_delay) ? "" : t("band.on_delay", { wait: formatSeconds(band.on_delay!) }),
+    none(band.empty_wait) ? "" : t("band.empty_wait", { wait: formatSeconds(band.empty_wait!) }),
+    none(band.zone_wait) ? "" : t("band.zone_wait", { wait: formatSeconds(band.zone_wait!) }),
+    zoneText(band.zone_sensors, t),
   ]
     .filter(Boolean)
     .join(" · ");
+
+/** The whole summary line: conditions, then overrides. */
+export const bandSummary = (band: Band, ctx: FormatContext, opts: SummaryOptions = {}) =>
+  [conditionsText(band, ctx, opts), overridesText(band, ctx.t)].filter(Boolean).join(" · ");
 
 /** The band's name, or "Band 2" by its position. */
 export const bandName = (band: Band, index: number, t: Localize): string =>
   band.name?.trim() || t("band.n", { n: index + 1 });
 
-const validWait = (v: number | null | undefined) =>
-  v === null || v === undefined || (Number.isInteger(v) && v >= 0 && v <= WAIT_MAX);
+const inRange = (v: number | null | undefined, max: number) =>
+  none(v) || (Number.isInteger(v) && v! >= 0 && v! <= max);
 
 /** Error keys of one band (strings band_error.<key>); empty when valid. */
 export const bandErrors = (band: Band): string[] => {
   const errors: string[] = [];
-  if (clockMinutes(band.start) === null) errors.push("start");
-  if (clockMinutes(band.end) === null) errors.push("end");
-  if (!validWait(band.empty_wait) || !validWait(band.zone_wait)) errors.push("wait_range");
-  const none = (v: number | null | undefined) => v === null || v === undefined;
-  if (none(band.empty_wait) && none(band.zone_wait)) errors.push("no_override");
+  const startSet = Boolean(band.start);
+  const endSet = Boolean(band.end);
+  if (startSet !== endSet) errors.push("time_pair");
+  if (startSet && clockMinutes(band.start) === null) errors.push("start");
+  if (endSet && clockMinutes(band.end) === null) errors.push("end");
+  if (band.light !== null && band.light !== undefined && !LIGHTS.includes(band.light))
+    errors.push("light");
+  if (!startSet && !endSet && !band.light) errors.push("no_condition");
   if (band.days?.some((d) => !(DAYS as readonly string[]).includes(d))) errors.push("days");
+  if (!inRange(band.on_delay, ON_DELAY_MAX)) errors.push("on_delay_range");
+  if (!inRange(band.empty_wait, WAIT_MAX) || !inRange(band.zone_wait, WAIT_MAX))
+    errors.push("wait_range");
+  if (
+    none(band.on_delay) &&
+    none(band.empty_wait) &&
+    none(band.zone_wait) &&
+    none(band.zone_sensors)
+  )
+    errors.push("no_override");
   return errors;
 };
 
@@ -162,36 +223,55 @@ export const scheduleSaveError = (errors: Record<string, string>): ScheduleSaveE
   return key === null ? null : { key, bands: [...bands].sort((a, b) => a - b) };
 };
 
+const numberOrNull = (v: unknown): number | null =>
+  typeof v === "number" && !Number.isNaN(v) ? v : null;
+
 /** The bands of a room's values, in a shape the editor can work with. */
 export const normalizeBands = (value: unknown): Band[] =>
   Array.isArray(value)
-    ? value.map((b: Partial<Band>) => ({
-        ...(b.id ? { id: b.id } : {}),
-        name: b.name ?? null,
-        start: toClock(b.start),
-        end: toClock(b.end),
-        days: DAYS.filter((d) => (b.days ?? []).includes(d)),
-        empty_wait: b.empty_wait ?? null,
-        zone_wait: b.zone_wait ?? null,
+    ? value.map((raw: Partial<Band>) => ({
+        ...(raw.id ? { id: raw.id } : {}),
+        name: raw.name ?? null,
+        start: raw.start ? toClock(raw.start) : null,
+        end: raw.end ? toClock(raw.end) : null,
+        days: DAYS.filter((d) => (raw.days ?? []).includes(d)),
+        light: raw.light === "bright" || raw.light === "dark" ? raw.light : null,
+        light_room: raw.light_room ?? null,
+        on_delay: numberOrNull(raw.on_delay),
+        empty_wait: numberOrNull(raw.empty_wait),
+        zone_wait: numberOrNull(raw.zone_wait),
+        zone_sensors: Array.isArray(raw.zone_sensors) ? [...raw.zone_sensors] : null,
       }))
     : [];
 
-/** The bands as saved: empty names as null; new bands without an id. */
+/** The bands as saved: empty names and times as null; new bands without an id. */
 export const serializeBands = (bands: Band[]): Band[] =>
   bands.map((b) => ({
     ...(b.id ? { id: b.id } : {}),
     name: b.name?.trim() || null,
-    start: b.start,
-    end: b.end,
+    start: b.start || null,
+    end: b.end || null,
     days: [...b.days],
+    light: b.light ?? null,
+    light_room: b.light ? (b.light_room ?? null) : null,
+    on_delay: b.on_delay ?? null,
     empty_wait: b.empty_wait ?? null,
     zone_wait: b.zone_wait ?? null,
+    zone_sensors: b.zone_sensors ? [...b.zone_sensors] : null,
   }));
 
-/** The waits in force for a room: the snapshot's, or the room's own values. */
-export const effectiveWaits = (room: RoomSnapshot) => ({
-  empty_wait: room.effective?.empty_wait ?? room.config.empty_wait ?? 30,
-  zone_wait: room.effective?.zone_wait ?? room.config.zone_wait ?? 150,
+/** The room's own values of what a band can override. */
+export const roomValues = (config: Record<string, unknown>) => ({
+  on_delay: Number(config.on_delay ?? 0),
+  empty_wait: Number(config.empty_wait ?? 30),
+  zone_wait: Number(config.zone_wait ?? 150),
+  zone_sensors: Array.isArray(config.zone_sensors) ? (config.zone_sensors as string[]) : [],
+});
+
+/** The values in force for a room: the snapshot's, or the room's own. */
+export const effectiveValues = (room: RoomSnapshot) => ({
+  ...roomValues(room.config),
+  ...(room.effective ?? {}),
 });
 
 /** The active band of a room with its position, if any. */

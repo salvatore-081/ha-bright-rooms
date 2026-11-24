@@ -86,7 +86,7 @@ describe("room tile", () => {
       last_action: null,
       status: "off",
       active_band: null,
-      effective: { empty_wait: 30, zone_wait: 150 },
+      effective: { on_delay: 0, empty_wait: 30, zone_wait: 150, zone_sensors: [] },
     });
     Object.assign(el, { room: r, ctx, link: false });
     const root = await mount(el);

@@ -14,6 +14,7 @@ import { cleanData, formCallbacks, groupFields, nestErrors, splitErrors } from "
 import { navigate, notify, panelPath } from "../nav";
 import {
   normalizeBands,
+  roomValues,
   scheduleSaveError,
   scheduleValid,
   serializeBands,
@@ -301,19 +302,19 @@ export class BrRoomEditor extends LitElement {
   private _schedule(fields: Record<string, string>) {
     const { t } = this.ctx;
     const room = this._room;
-    const waits = {
-      empty_wait: Number(this._data.empty_wait ?? 30),
-      zone_wait: Number(this._data.zone_wait ?? 150),
-    };
     return html`<div class="card section schedule">
-      <h2><ha-icon icon="mdi:clock-time-four-outline"></ha-icon>${t("editor.section_schedule")}</h2>
+      <h2><ha-icon icon="mdi:tune-vertical"></ha-icon>${t("editor.section_schedule")}</h2>
       <div class="card-content hint">${t("editor.hint_schedule")}</div>
       <div class="card-content">
         <br-schedule-editor
           .ctx=${this.ctx}
+          .hass=${this.hass}
+          .formReady=${this.formReady}
+          .rooms=${this.snapshot.rooms.map((r) => ({ id: r.id, name: r.name }))}
+          .roomId=${this.roomId}
           .bands=${this._bands}
           .activeBand=${room?.active_band ?? null}
-          .roomWaits=${waits}
+          .roomValues=${roomValues(this._data)}
           .saveError=${scheduleSaveError(fields)}
           .showErrors=${this._showBandErrors}
           .disabled=${this._saving}

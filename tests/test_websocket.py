@@ -489,7 +489,7 @@ def test_versions_match() -> None:
         (root / "custom_components/bright_rooms/manifest.json").read_text()
     )
     frontend = json.loads((root / "frontend/package.json").read_text())
-    assert manifest["version"] == frontend["version"] == "0.1.5"
+    assert manifest["version"] == frontend["version"] == "0.1.6"
 
 
 async def test_schedule_save_and_round_trip(
@@ -533,15 +533,24 @@ async def test_schedule_save_and_round_trip(
         "start": "20:00",
         "end": "23:00",
         "days": [],
+        "light": None,
+        "light_room": None,
+        "on_delay": None,
         "empty_wait": 300,
         "zone_wait": None,
+        "zone_sensors": None,
     }
     assert len(band["id"]) == 32
     res = await _call(client, type="bright_rooms/rooms")
     room = res["result"]["rooms"][0]
     assert room["config"]["schedule"] == [band]
     assert room["active_band"] == band["id"]  # 20:10
-    assert room["effective"] == {"empty_wait": 300, "zone_wait": 150}
+    assert room["effective"] == {
+        "on_delay": 0,
+        "empty_wait": 300,
+        "zone_wait": 150,
+        "zone_sensors": ["binary_sensor.table_presence"],
+    }
     res = await _call(client, type="bright_rooms/schema", room_id=room_id)
     assert res["result"]["values"]["schedule"] == [band]
 
@@ -566,3 +575,69 @@ async def test_schedule_save_and_round_trip(
     )
     await hass.async_block_till_done()
     assert entry.subentries[room_id].data["schedule"] == []
+
+
+async def test_schedule_light_bands_saved(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_ws_client
+) -> None:
+    client = await hass_ws_client(hass)
+    entry, _ = await make(hass, freezer)
+    room_id = kitchen(entry).subentry_id
+    res = await _call(client, type="bright_rooms/schema", room_id=room_id)
+    values = res["result"]["values"]
+
+    async def save(band):
+        return await _call(
+            client,
+            type="bright_rooms/room/save",
+            room_id=room_id,
+            data={**values, "schedule": [band]},
+        )
+
+    res = await save({"light": "dark", "light_room": "nope", "empty_wait": 60})
+    assert res["result"]["errors"] == {
+        "schedule": "schedule_invalid",
+        "schedule.0": "schedule_invalid",
+    }
+    band = {
+        "name": "Day",
+        "light": "bright",
+        "light_room": room_id,
+        "on_delay": 120,
+        "zone_sensors": ["binary_sensor.hall"],
+    }
+    res = await save(band)
+    assert res["result"] == {"room_id": room_id}
+    await hass.async_block_till_done()
+    (saved,) = entry.subentries[room_id].data["schedule"]
+    assert saved == {
+        "id": saved["id"],
+        "name": "Day",
+        "start": None,
+        "end": None,
+        "days": [],
+        "light": "bright",
+        "light_room": room_id,
+        "on_delay": 120,
+        "empty_wait": None,
+        "zone_wait": None,
+        "zone_sensors": ["binary_sensor.hall"],
+    }
+    res = await _call(client, type="bright_rooms/rooms")
+    room = res["result"]["rooms"][0]
+    assert room["active_band"] is None  # dark at 20:10
+    assert room["effective"]["on_delay"] == 0
+    # A new room may refer to itself with null.
+    hall = ar.async_get(hass).async_create("Hall")
+    res = await _call(
+        client,
+        type="bright_rooms/room/save",
+        data={
+            CONF_NAME: "Hall",
+            CONF_AREA: hall.id,
+            CONF_PRESENCE_SENSORS: ["binary_sensor.hall"],
+            CONF_LIGHTS: ["light.hall"],
+            "schedule": [{"light": "dark", "light_room": None, "empty_wait": 5}],
+        },
+    )
+    assert "room_id" in res["result"]

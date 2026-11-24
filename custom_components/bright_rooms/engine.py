@@ -241,6 +241,8 @@ class OffSequence:
     remembered: dict[str, int] = field(
         default_factory=dict
     )  # brightness before dimming
+    # Zone sensors of the current wait (read when the wait starts).
+    zone_sensors: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -317,13 +319,13 @@ class RoomEngine:
         """Read the current states and start listening; nothing is switched."""
         now = dt_util.utcnow()
         self.occupied = self._occupancy()
-        self.zone_occupied = self._zone()
         self.raw_lux = self._raw()
         self._update_ambient(now, initial=True)
+        self.zone_occupied = self._zone()
         cfg = self.cfg
         watched = {
             *cfg.presence_sensors,
-            *cfg.zone_sensors,
+            *self._all_zone_sensors(),
             *cfg.lights,
             *cfg.other_lights,
         }
@@ -375,10 +377,23 @@ class RoomEngine:
             return None
         return any(s.state == STATE_ON for s in valid)
 
-    def _zone(self) -> bool:
+    def _all_zone_sensors(self) -> set[str]:
+        """The room's zone sensors and those of its bands."""
+        sensors = set(self.cfg.zone_sensors)
+        for band in self.cfg.schedule:
+            sensors.update(band.zone_sensors or ())
+        return sensors
+
+    def _zone_sensors_now(self) -> tuple[str, ...]:
+        """Those of the wait in progress, else the effective ones now."""
+        if self._seq is not None and self._seq.phase in ("zone", "empty"):
+            return self._seq.zone_sensors
+        return tuple(self.effective()["zone_sensors"])
+
+    def _zone(self, sensors: tuple[str, ...] | None = None) -> bool:
         return any(
             (s := self.hass.states.get(e)) is not None and s.state == STATE_ON
-            for e in self.cfg.zone_sensors
+            for e in (self._zone_sensors_now() if sensors is None else sensors)
         )
 
     def _raw(self) -> float | None:
@@ -442,7 +457,7 @@ class RoomEngine:
             self._update_ambient(now)
         if entity_id in cfg.presence_sensors:
             self._on_presence(now)
-        if entity_id in cfg.zone_sensors:
+        if entity_id in self._all_zone_sensors():
             self._on_zone(now)
         self._check_empty_lights_on(now)
         self.parent.notify(self)
@@ -619,7 +634,7 @@ class RoomEngine:
             self._record(Action.SKIPPED_ON, Reason.DISABLED, now)
             return
         self._pending_on = True
-        self._schedule("on", self.cfg.on_delay, self._try_turn_on)
+        self._schedule("on", self.effective(now)["on_delay"], self._try_turn_on)
 
     def _cancel_pending_on(self) -> None:
         self._pending_on = False
@@ -711,7 +726,10 @@ class RoomEngine:
         """Zone wait while a zone sensor is on (within its limit), then empty wait."""
         seq = self._seq
         assert seq is not None
-        empty_wait, zone_wait = self.effective(now)
+        eff = self.effective(now)
+        empty_wait, zone_wait = eff["empty_wait"], eff["zone_wait"]
+        seq.zone_sensors = tuple(eff["zone_sensors"])
+        self.zone_occupied = self._zone(seq.zone_sensors)
         if self.zone_occupied and not seq.zone_timed_out:
             if seq.zone_until is None:
                 seq.zone_until = now + timedelta(seconds=zone_wait)
@@ -876,6 +894,9 @@ class RoomEngine:
             self._on_became_dark()
         if previous != self.dark:
             self._check_goal_reason()
+            # Bands (of this room or of others) may depend on this room's light.
+            self.zone_occupied = self._zone()
+            self.parent.dark_changed(self)
 
     # -------------------------------------------------------------- learning
 
@@ -1099,19 +1120,42 @@ class RoomEngine:
 
     # ---------------------------------------------------------------- bands
 
-    def active_band(self, now: datetime | None = None) -> Band | None:
-        """The room's time band active now, if any."""
-        return active_band(self.cfg.schedule, dt_util.as_local(now or dt_util.utcnow()))
+    def dark_of(self, room_id: str | None) -> bool | None:
+        """Dark state of this room (None or its id) or of another room."""
+        if room_id is None or room_id == self.subentry_id:
+            return self.dark
+        other = self.parent.rooms.get(room_id)
+        return other.dark if other is not None else None
 
-    def effective(self, now: datetime | None = None) -> tuple[int, int]:
-        """Empty wait and zone wait now (a band may override them)."""
+    def active_band(self, now: datetime | None = None) -> Band | None:
+        """The room's band active now, if any."""
+        return active_band(
+            self.cfg.schedule, dt_util.as_local(now or dt_util.utcnow()), self.dark_of
+        )
+
+    def effective(self, now: datetime | None = None) -> dict[str, Any]:
+        """Settings that apply now: the room's, or the active band's overrides."""
+        cfg = self.cfg
+        values: dict[str, Any] = {
+            "on_delay": int(cfg.on_delay),
+            "empty_wait": int(cfg.empty_wait),
+            "zone_wait": int(cfg.zone_wait),
+            "zone_sensors": list(cfg.zone_sensors),
+        }
         band = self.active_band(now)
-        empty = int(self.cfg.empty_wait)
-        zone = int(self.cfg.zone_wait)
         if band is not None:
-            empty = band.empty_wait if band.empty_wait is not None else empty
-            zone = band.zone_wait if band.zone_wait is not None else zone
-        return empty, zone
+            for key in ("on_delay", "empty_wait", "zone_wait"):
+                if (value := getattr(band, key)) is not None:
+                    values[key] = value
+            if band.zone_sensors is not None:
+                values["zone_sensors"] = list(band.zone_sensors)
+        return values
+
+    def references(self, room_id: str) -> bool:
+        """Whether a band of this room depends on another room's light."""
+        return any(
+            b.light is not None and b.light_room == room_id for b in self.cfg.schedule
+        )
 
     def _schedule_band_refresh(self) -> None:
         """Update the entities and the panel when a band starts or ends."""
@@ -1392,9 +1436,7 @@ class RoomEngine:
             "last_action": self.last_action.as_dict() if self.last_action else None,
             "goal": self._goal.state if self._goal else None,
             "active_band": band.id if (band := self.active_band()) else None,
-            "effective": dict(
-                zip(("empty_wait", "zone_wait"), self.effective(), strict=True)
-            ),
+            "effective": self.effective(),
             "lights": lights,
             "sensor_entities": self.sensor_entities(),
         }
@@ -1462,6 +1504,14 @@ class BrightRoomsEngine:
         """A room changed: entities and panel subscriptions update."""
         async_dispatcher_send(self.hass, room_signal(room.subentry_id))
         async_dispatcher_send(self.hass, self.signal)
+
+    @callback
+    def dark_changed(self, room: RoomEngine) -> None:
+        """Rooms whose bands depend on this room's light update their state."""
+        for other in self.rooms.values():
+            if other is not room and other.references(room.subentry_id):
+                other.zone_occupied = other._zone()
+                self.notify(other)
 
     def set_room_enabled(self, room_id: str, enabled: bool) -> None:
         """Automatic switch of a room."""
