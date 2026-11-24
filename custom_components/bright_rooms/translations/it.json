@@ -1,12 +1,12 @@
 {
   "config": {
     "abort": {
-      "single_instance_allowed": "Bright Rooms è già configurato: aggiungi le stanze dalla sua pagina o dal suo pannello."
+      "single_instance_allowed": "Bright Rooms è già configurato: aggiungi le zone luce dalla sua pagina o dal suo pannello."
     },
     "step": {
       "user": {
         "title": "Bright Rooms",
-        "description": "Bright Rooms accende e spegne le luci di ogni stanza in base ai sensori di presenza e alla luce del giorno. Dopo questo passo aggiungi le stanze dalla pagina dell'integrazione o dal pannello Bright Rooms."
+        "description": "Bright Rooms accende e spegne le luci di ogni zona luce in base ai sensori di presenza e alla luce del giorno. Dopo questo passo aggiungi le zone luce dalla pagina dell'integrazione o dal pannello Bright Rooms."
       }
     }
   },
@@ -22,7 +22,7 @@
           "learn_weight": "Peso di una nuova misura"
         },
         "data_description": {
-          "settle_seconds": "Dopo un cambio delle luci della stanza la luce ambiente resta ferma per questo tempo: i sensori di luminosità aggiornano in ritardo e alcune lampade si accendono piano. È anche il tempo fra le due letture di una misura.",
+          "settle_seconds": "Dopo un cambio delle luci di una zona la luce ambiente resta ferma per questo tempo: i sensori di luminosità aggiornano in ritardo e alcune lampade si accendono piano. È anche il tempo fra le due letture di una misura.",
           "learn_ambient_max": "Gli apporti si misurano solo con poca luce naturale, quando il salto del sensore è netto.",
           "learn_weight": "Una nuova misura sposta il valore imparato di questa parte (0,2 = 20 %)."
         }
@@ -31,30 +31,33 @@
   },
   "config_subentries": {
     "room": {
-      "entry_type": "Stanza",
+      "entry_type": "Zona luce",
       "initiate_flow": {
-        "user": "Aggiungi stanza"
+        "user": "Aggiungi zona luce"
       },
       "abort": {
-        "reconfigure_successful": "Stanza aggiornata."
+        "reconfigure_successful": "Zona luce aggiornata."
       },
       "error": {
-        "name_taken": "C'è già una stanza con questo nome.",
+        "name_taken": "C'è già una zona luce con questo nome.",
         "no_presence": "Scegli almeno un sensore di presenza.",
         "no_lights": "Scegli almeno una luce.",
         "bright_not_above_dark": "Deve essere più alta della soglia del buio.",
         "brightness_lux_order": "Deve essere più alta del valore della luminosità minima.",
-        "light_in_other_room": "Una di queste luci è già in un'altra stanza.",
-        "schedule_invalid": "Una fascia non è valida: controlla orari o condizione di luce, giorni e valori (almeno uno)."
+        "light_in_other_room": "Una di queste luci è già in un'altra zona luce.",
+        "schedule_invalid": "Una fascia non è valida: controlla orari o condizione di luce, giorni e valori (almeno uno).",
+        "neighbor_invalid": "Scegli zone esistenti, diverse da questa."
       },
       "step": {
         "user": {
-          "title": "Aggiungi stanza",
+          "title": "Aggiungi zona luce",
           "data": {
             "name": "Nome",
-            "area": "Area",
+            "area": "Stanza (area)",
             "presence_sensors": "Sensori di presenza",
-            "zone_sensors": "Sensori di presenza delle aree vicine",
+            "auto_neighbors": "Le altre zone della stessa stanza contano come presenze vicine",
+            "neighbor_zones": "Zone vicine",
+            "zone_sensors": "Presenze vicine",
             "lights": "Luci",
             "illuminance_sensor": "Sensore di luminosità",
             "other_lights": "Altre luci viste dal sensore di luminosità",
@@ -69,40 +72,44 @@
             "brightness_min": "Luminosità al buio",
             "brightness_dark_lux": "Luminosità minima fino a",
             "brightness_full_lux": "Luminosità piena da",
-            "empty_wait": "Attesa con la stanza vuota",
+            "empty_wait": "Attesa con la zona vuota",
             "zone_wait": "Attesa massima in più con le aree vicine occupate",
             "dim_percent": "Abbassa al",
             "dim_wait": "Abbassate per",
             "transition": "Transizione allo spegnimento"
           },
           "data_description": {
-            "name": "Compare nel pannello e sul dispositivo della stanza. Più stanze possono stare nella stessa area, per esempio le luci del piano cottura e la lampada del tavolo di una cucina, ognuna con il suo sensore di presenza.",
-            "area": "L'area in cui va il dispositivo della stanza.",
-            "presence_sensors": "La stanza è occupata finché almeno uno è acceso.",
-            "zone_sensors": "Se uno di questi rileva qualcuno, lo spegnimento aspetta di più: spesso ci si sposta fra aree vicine e si torna.",
-            "lights": "Le luci comandate da Bright Rooms. Una luce può stare in una sola stanza.",
-            "illuminance_sensor": "Facoltativo. Senza, la stanza è sempre considerata al buio e le luci dimmerabili si accendono al massimo.",
-            "other_lights": "Luci di altre stanze che il sensore di luminosità vede: se una di queste cambia, la misura dell'apporto di una luce viene scartata.",
+            "name": "Compare nel pannello e sul dispositivo della zona, per esempio \"Piano cottura\" o \"Tavolo\".",
+            "area": "La stanza a cui appartiene la zona: le sue zone condividono l'interruttore Automatico della stanza e, di norma, contano come presenze vicine l'una dell'altra.",
+            "presence_sensors": "La zona è occupata finché almeno uno è acceso.",
+            "zone_sensors": "Altri sensori di presenza che contano come presenze vicine. Se uno di questi rileva qualcuno, lo spegnimento aspetta di più: spesso ci si sposta lì vicino e si torna.",
+            "lights": "Le luci comandate da Bright Rooms. Una luce può stare in una sola zona.",
+            "illuminance_sensor": "Facoltativo. Senza, la zona è sempre considerata al buio e le luci dimmerabili si accendono al massimo.",
+            "other_lights": "Luci di altre zone che il sensore di luminosità vede: se una di queste cambia, la misura dell'apporto di una luce viene scartata.",
             "on_delay": "Per quanto tempo deve esserci qualcuno, senza interruzioni, prima di accendere.",
-            "only_when_dark": "La luce ambiente si misura senza le luci della stanza.",
-            "bright_above": "Deve essere più alta della soglia del buio: nel mezzo la stanza resta com'era.",
-            "off_when_bright": "Anche con qualcuno nella stanza, ma solo nel passaggio dal buio alla luce: una luce accesa a mano quando c'è già luce resta accesa.",
-            "on_when_dark": "Se passa dalla luce al buio con qualcuno nella stanza e tutte le luci spente, le luci si accendono come se fosse appena entrato. Solo in quel momento: le luci spente a mano quando è già buio restano spente. Vale solo con \"Accendi solo con il buio\".",
+            "only_when_dark": "La luce ambiente si misura senza le luci della zona.",
+            "bright_above": "Deve essere più alta della soglia del buio: nel mezzo la zona resta com'era.",
+            "off_when_bright": "Anche con qualcuno nella zona, ma solo nel passaggio dal buio alla luce: una luce accesa a mano quando c'è già luce resta accesa.",
+            "on_when_dark": "Se passa dalla luce al buio con qualcuno nella zona e tutte le luci spente, le luci si accendono come se fosse appena entrato. Solo in quel momento: le luci spente a mano quando è già buio restano spente. Vale solo con \"Accendi solo con il buio\".",
             "min_off_seconds": "Per le lampade che cambiano tonalità se spente e riaccese in fretta.",
             "brightness_min": "Luci dimmerabili: luminosità con la luce ambiente fino al valore seguente; 100 % dal valore della luminosità piena, in proporzione nel mezzo.",
-            "empty_wait": "Con la stanza e le aree vicine vuote, prima di abbassare o spegnere.",
+            "empty_wait": "Con la zona e le presenze vicine vuote, prima di abbassare o spegnere.",
             "dim_percent": "Prima di spegnere, le luci dimmerabili si abbassano a questa parte della loro luminosità come avviso (100 % = nessun avviso). Se qualcuno torna, riprendono la luminosità di prima.",
-            "transition": "Solo luci dimmerabili."
+            "transition": "Solo luci dimmerabili.",
+            "auto_neighbors": "I loro sensori di presenza fanno aspettare di più prima di spegnere, come presenze vicine.",
+            "neighbor_zones": "Zone di qualsiasi stanza i cui sensori di presenza contano anch'essi come presenze vicine (una cucina aperta sul soggiorno)."
           },
-          "description": "Una stanza è un gruppo di luci comandato dai suoi sensori di presenza; più stanze possono stare nella stessa area. L'apporto di ogni luce si impara da solo, oppure si imposta nel pannello Bright Rooms."
+          "description": "Una zona luce è un gruppo di luci comandato dai suoi sensori di presenza. Le zone si raggruppano in stanze secondo l'area: le zone della stessa area contano come presenze vicine l'una dell'altra. L'apporto di ogni luce si impara da solo, oppure si imposta nel pannello Bright Rooms."
         },
         "reconfigure": {
-          "title": "Modifica stanza",
+          "title": "Modifica zona luce",
           "data": {
             "name": "Nome",
-            "area": "Area",
+            "area": "Stanza (area)",
             "presence_sensors": "Sensori di presenza",
-            "zone_sensors": "Sensori di presenza delle aree vicine",
+            "auto_neighbors": "Le altre zone della stessa stanza contano come presenze vicine",
+            "neighbor_zones": "Zone vicine",
+            "zone_sensors": "Presenze vicine",
             "lights": "Luci",
             "illuminance_sensor": "Sensore di luminosità",
             "other_lights": "Altre luci viste dal sensore di luminosità",
@@ -117,30 +124,32 @@
             "brightness_min": "Luminosità al buio",
             "brightness_dark_lux": "Luminosità minima fino a",
             "brightness_full_lux": "Luminosità piena da",
-            "empty_wait": "Attesa con la stanza vuota",
+            "empty_wait": "Attesa con la zona vuota",
             "zone_wait": "Attesa massima in più con le aree vicine occupate",
             "dim_percent": "Abbassa al",
             "dim_wait": "Abbassate per",
             "transition": "Transizione allo spegnimento"
           },
           "data_description": {
-            "name": "Compare nel pannello e sul dispositivo della stanza. Più stanze possono stare nella stessa area, per esempio le luci del piano cottura e la lampada del tavolo di una cucina, ognuna con il suo sensore di presenza.",
-            "area": "L'area in cui va il dispositivo della stanza.",
-            "presence_sensors": "La stanza è occupata finché almeno uno è acceso.",
-            "zone_sensors": "Se uno di questi rileva qualcuno, lo spegnimento aspetta di più: spesso ci si sposta fra aree vicine e si torna.",
-            "lights": "Le luci comandate da Bright Rooms. Una luce può stare in una sola stanza.",
-            "illuminance_sensor": "Facoltativo. Senza, la stanza è sempre considerata al buio e le luci dimmerabili si accendono al massimo.",
-            "other_lights": "Luci di altre stanze che il sensore di luminosità vede: se una di queste cambia, la misura dell'apporto di una luce viene scartata.",
+            "name": "Compare nel pannello e sul dispositivo della zona, per esempio \"Piano cottura\" o \"Tavolo\".",
+            "area": "La stanza a cui appartiene la zona: le sue zone condividono l'interruttore Automatico della stanza e, di norma, contano come presenze vicine l'una dell'altra.",
+            "presence_sensors": "La zona è occupata finché almeno uno è acceso.",
+            "zone_sensors": "Altri sensori di presenza che contano come presenze vicine. Se uno di questi rileva qualcuno, lo spegnimento aspetta di più: spesso ci si sposta lì vicino e si torna.",
+            "lights": "Le luci comandate da Bright Rooms. Una luce può stare in una sola zona.",
+            "illuminance_sensor": "Facoltativo. Senza, la zona è sempre considerata al buio e le luci dimmerabili si accendono al massimo.",
+            "other_lights": "Luci di altre zone che il sensore di luminosità vede: se una di queste cambia, la misura dell'apporto di una luce viene scartata.",
             "on_delay": "Per quanto tempo deve esserci qualcuno, senza interruzioni, prima di accendere.",
-            "only_when_dark": "La luce ambiente si misura senza le luci della stanza.",
-            "bright_above": "Deve essere più alta della soglia del buio: nel mezzo la stanza resta com'era.",
-            "off_when_bright": "Anche con qualcuno nella stanza, ma solo nel passaggio dal buio alla luce: una luce accesa a mano quando c'è già luce resta accesa.",
-            "on_when_dark": "Se passa dalla luce al buio con qualcuno nella stanza e tutte le luci spente, le luci si accendono come se fosse appena entrato. Solo in quel momento: le luci spente a mano quando è già buio restano spente. Vale solo con \"Accendi solo con il buio\".",
+            "only_when_dark": "La luce ambiente si misura senza le luci della zona.",
+            "bright_above": "Deve essere più alta della soglia del buio: nel mezzo la zona resta com'era.",
+            "off_when_bright": "Anche con qualcuno nella zona, ma solo nel passaggio dal buio alla luce: una luce accesa a mano quando c'è già luce resta accesa.",
+            "on_when_dark": "Se passa dalla luce al buio con qualcuno nella zona e tutte le luci spente, le luci si accendono come se fosse appena entrato. Solo in quel momento: le luci spente a mano quando è già buio restano spente. Vale solo con \"Accendi solo con il buio\".",
             "min_off_seconds": "Per le lampade che cambiano tonalità se spente e riaccese in fretta.",
             "brightness_min": "Luci dimmerabili: luminosità con la luce ambiente fino al valore seguente; 100 % dal valore della luminosità piena, in proporzione nel mezzo.",
-            "empty_wait": "Con la stanza e le aree vicine vuote, prima di abbassare o spegnere.",
+            "empty_wait": "Con la zona e le presenze vicine vuote, prima di abbassare o spegnere.",
             "dim_percent": "Prima di spegnere, le luci dimmerabili si abbassano a questa parte della loro luminosità come avviso (100 % = nessun avviso). Se qualcuno torna, riprendono la luminosità di prima.",
-            "transition": "Solo luci dimmerabili."
+            "transition": "Solo luci dimmerabili.",
+            "auto_neighbors": "I loro sensori di presenza fanno aspettare di più prima di spegnere, come presenze vicine.",
+            "neighbor_zones": "Zone di qualsiasi stanza i cui sensori di presenza contano anch'essi come presenze vicine (una cucina aperta sul soggiorno)."
           }
         }
       }
@@ -193,8 +202,8 @@
               "became_dark": "È diventato buio",
               "light_back": "Luce tornata disponibile",
               "bright": "C'è abbastanza luce",
-              "empty": "Stanza vuota",
-              "zone_timeout": "Stanza vuota, aree vicine ancora occupate",
+              "empty": "Zona vuota",
+              "zone_timeout": "Zona vuota, presenze vicine ancora rilevate",
               "presence_back": "È tornato qualcuno",
               "changed_by_someone_else": "Luci cambiate da qualcun altro",
               "not_dark": "Non è buio",
@@ -230,6 +239,9 @@
     },
     "switch": {
       "automatic": {
+        "name": "Automatico"
+      },
+      "area_automatic": {
         "name": "Automatico"
       }
     }

@@ -7,10 +7,11 @@ import { property, state } from "lit/decorators.js";
 import "../components/br-room-tile";
 import "../components/br-entities-card";
 import "../components/br-schedule-editor";
+import "../components/br-switch";
 import { errorMessage, fetchSchema, saveRoom, setContribution } from "../api";
 import { confirmDialog } from "../components/br-confirm";
 import { type FormatContext, formatAgo, formatLux } from "../format";
-import { cleanData, formCallbacks, groupFields, nestErrors, splitErrors } from "../form";
+import { cleanData, formCallbacks, nestErrors, splitErrors, zoneFormGroups } from "../form";
 import { navigate, notify, panelPath } from "../nav";
 import {
   normalizeBands,
@@ -21,6 +22,7 @@ import {
   validateSchedule,
 } from "../schedule";
 import { shared, tokens } from "../styles";
+import { entityName, zoneLabel, zoneLabels } from "../zones";
 import type {
   Band,
   FormField,
@@ -125,6 +127,62 @@ export class BrRoomEditor extends LitElement {
         padding: 12px 0;
         border-top: 1px solid var(--br-border);
         background: var(--primary-background-color, #fafafa);
+      }
+      .neighbors-custom {
+        display: grid;
+        gap: 14px;
+        padding-top: 8px;
+      }
+      .switch-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+      }
+      fieldset {
+        border: 0;
+        margin: 0;
+        padding: 0;
+      }
+      legend {
+        padding: 0;
+        margin-bottom: 6px;
+      }
+      .zone-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .zone-toggle {
+        min-height: 32px;
+        padding: 0 12px;
+        border-radius: 16px;
+        border: 1px solid var(--br-border);
+        background: transparent;
+        color: var(--br-text);
+        font: inherit;
+        font-size: 0.9rem;
+        cursor: pointer;
+      }
+      .zone-toggle[aria-pressed="true"] {
+        background: var(--br-primary);
+        border-color: var(--br-primary);
+        color: var(--br-on-primary);
+      }
+      .zone-toggle:focus-visible {
+        outline: 2px solid var(--br-primary);
+        outline-offset: 2px;
+      }
+      .in-use {
+        font-size: 0.9rem;
+      }
+      .in-use ha-icon {
+        --mdc-icon-size: 18px;
+        color: var(--br-muted);
+        margin-right: 6px;
+        vertical-align: -3px;
+      }
+      [hidden] {
+        display: none;
       }
       .contribution {
         display: grid;
@@ -254,16 +312,17 @@ export class BrRoomEditor extends LitElement {
     const { base, fields } = splitErrors(this._errors);
     return html`
       ${base ? html`<div class="error-box">${cb.computeError(base)}</div>` : nothing}
-      ${groupFields(this._schema).map(
+      ${zoneFormGroups(this._schema).map(
         (group) =>
-          html`<div class="card section">
+          html`<div class="card section ${group.key}">
             <h2><ha-icon .icon=${group.icon}></ha-icon>${t(`editor.section_${group.key}`)}</h2>
             ${
               group.key === "area" || group.key === "daylight" || group.key === "off"
                 ? html`<div class="card-content hint">${t(`editor.hint_${group.key}`)}</div>`
                 : nothing
             }
-            <div class="card-content">
+            ${group.key === "neighbors" ? this._neighbors(fields) : nothing}
+            <div class="card-content" ?hidden=${group.schema.length === 0}>
               <ha-form
                 .hass=${this.hass}
                 .data=${this._data}
@@ -299,6 +358,83 @@ export class BrRoomEditor extends LitElement {
     `;
   }
 
+  /** Nearby presence: the other zones of this room, zones of other rooms, the sensors in use. */
+  private _neighbors(fields: Record<string, string>) {
+    const { t } = this.ctx;
+    const cb = formCallbacks(t);
+    const area = this._data.area as string | undefined;
+    const zones = this.snapshot.rooms.filter((z) => z.id !== this.roomId);
+    const sameArea = zones.filter((z) => z.area_id === area);
+    const others = zones.filter((z) => z.area_id !== area);
+    const labels = zoneLabels(this.snapshot);
+    const auto = this._data.auto_neighbors !== false;
+    const chosen = (this._data.neighbor_zones as string[] | undefined) ?? [];
+    const unknown = chosen.filter((id) => !others.some((z) => z.id === id));
+    const error = fields.neighbor_zones ?? fields.auto_neighbors;
+    const effective = this._room?.neighbors?.effective;
+    return html`<div class="card-content neighbors-custom">
+      <div class="switch-row">
+        <br-switch
+          class="auto-neighbors"
+          .checked=${auto}
+          .label=${t("neighbors.auto")}
+          .disabled=${this._saving}
+          @change=${(ev: CustomEvent<{ checked: boolean }>) =>
+            (this._data = { ...this._data, auto_neighbors: ev.detail.checked })}
+        ></br-switch>
+        <div>
+          <div>${t("neighbors.auto")}</div>
+          <div class="hint auto-list">
+            ${
+              sameArea.length
+                ? sameArea.map((z) => z.name).join(", ")
+                : t(area ? "neighbors.auto_none" : "neighbors.auto_no_area")
+            }
+          </div>
+        </div>
+      </div>
+      <fieldset class="other-zones">
+        <legend>${t("neighbors.zones")}</legend>
+        ${
+          others.length || unknown.length
+            ? html`<div class="zone-chips">
+                ${[...others.map((z) => z.id), ...unknown].map(
+                  (id) =>
+                    html`<button
+                      class="zone-toggle"
+                      aria-pressed=${chosen.includes(id) ? "true" : "false"}
+                      ?disabled=${this._saving}
+                      @click=${() => this._toggleNeighbor(id)}
+                    >
+                      ${labels[id] ?? t("neighbors.unknown_zone")}
+                    </button>`,
+                )}
+              </div>`
+            : html`<div class="hint">${t("neighbors.zones_none")}</div>`
+        }
+      </fieldset>
+      ${error ? html`<div class="error-box">${cb.computeError(error)}</div>` : nothing}
+      ${
+        effective
+          ? html`<div class="in-use">
+              <ha-icon icon="mdi:account-multiple-check-outline"></ha-icon>${t("neighbors.in_use", {
+                names: effective.length
+                  ? effective.map((id) => entityName(this.hass, id)).join(", ")
+                  : t("neighbors.in_use_none"),
+              })}
+            </div>`
+          : nothing
+      }
+      <div class="hint">${t("neighbors.sensors_hint")}</div>
+    </div>`;
+  }
+
+  private _toggleNeighbor(id: string) {
+    const chosen = (this._data.neighbor_zones as string[] | undefined) ?? [];
+    const next = chosen.includes(id) ? chosen.filter((z) => z !== id) : [...chosen, id];
+    this._data = { ...this._data, neighbor_zones: next };
+  }
+
   private _schedule(fields: Record<string, string>) {
     const { t } = this.ctx;
     const room = this._room;
@@ -310,11 +446,14 @@ export class BrRoomEditor extends LitElement {
           .ctx=${this.ctx}
           .hass=${this.hass}
           .formReady=${this.formReady}
-          .rooms=${this.snapshot.rooms.map((r) => ({ id: r.id, name: r.name }))}
+          .rooms=${this.snapshot.rooms.map((r) => ({ id: r.id, name: zoneLabel(this.snapshot, r.id) }))}
           .roomId=${this.roomId}
           .bands=${this._bands}
           .activeBand=${room?.active_band ?? null}
-          .roomValues=${roomValues(this._data)}
+          .roomValues=${{
+            ...roomValues(this._data),
+            zone_sensors: room?.neighbors?.effective ?? roomValues(this._data).zone_sensors,
+          }}
           .saveError=${scheduleSaveError(fields)}
           .showErrors=${this._showBandErrors}
           .disabled=${this._saving}

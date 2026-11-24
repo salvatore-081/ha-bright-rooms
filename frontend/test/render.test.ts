@@ -108,7 +108,7 @@ describe("overview", () => {
     expect(root.querySelectorAll("br-room-tile")).toHaveLength(2);
     el.snapshot = snapshot({ rooms: [] });
     await el.updateComplete;
-    expect(text(root)).toContain("No rooms yet");
+    expect(text(root)).toContain("No light zones yet");
   });
 });
 

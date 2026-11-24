@@ -1,4 +1,4 @@
-// Rooms tab: the rooms, to switch on or off, edit, add or delete.
+// Light zones tab: the zones grouped by room, to switch on or off, edit, add or delete.
 
 import { element } from "../define";
 import { LitElement, css, html } from "lit";
@@ -11,6 +11,7 @@ import { type FormatContext, statusIcon, statusLabel, statusTone } from "../form
 import { navigate, notify, panelPath } from "../nav";
 import { shared, tokens } from "../styles";
 import type { HomeAssistant, RoomSnapshot, Snapshot } from "../types";
+import { groupByArea } from "../zones";
 
 /** Ask to delete a room, then delete it; resolves to true when deleted. */
 export const confirmDelete = async (
@@ -43,6 +44,7 @@ export class BrViewRooms extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;
   @property({ attribute: false }) snapshot!: Snapshot;
   @property({ attribute: false }) ctx!: FormatContext;
+  @property({ attribute: false }) areaNames: Record<string, string> = {};
 
   static styles = [
     tokens,
@@ -66,6 +68,26 @@ export class BrViewRooms extends LitElement {
         margin: 0;
         color: var(--br-muted);
         line-height: 1.5;
+      }
+      .area + .area {
+        margin-top: var(--br-gap);
+      }
+      .area h2 {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0;
+        padding: 14px 16px 6px;
+        font-size: 1rem;
+        font-weight: 500;
+      }
+      .area h2 ha-icon {
+        color: var(--br-muted);
+      }
+      .area h2 .count {
+        color: var(--br-muted);
+        font-weight: 400;
+        font-size: 0.85rem;
       }
       ul {
         list-style: none;
@@ -125,11 +147,18 @@ export class BrViewRooms extends LitElement {
       </div>
       ${
         rooms.length
-          ? html`<div class="card">
-              <ul>
-                ${rooms.map((room) => this._row(room))}
-              </ul>
-            </div>`
+          ? groupByArea(this.snapshot, this.areaNames).map(
+              (group) =>
+                html`<section class="card area">
+                  <h2>
+                    <ha-icon icon="mdi:floor-plan"></ha-icon>${group.area.name}
+                    <span class="count">${t("rooms.zone_count", { n: group.zones.length })}</span>
+                  </h2>
+                  <ul>
+                    ${group.zones.map((room) => this._row(room))}
+                  </ul>
+                </section>`,
+            )
           : html`<div class="card empty-state">
               <ha-icon icon="mdi:floor-plan"></ha-icon>${t("overview.no_rooms")}
             </div>`

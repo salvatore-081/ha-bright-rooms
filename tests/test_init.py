@@ -50,7 +50,11 @@ async def test_entities(hass: HomeAssistant, freezer: FrozenDateTimeFactory) -> 
     device = dr.async_get(hass).async_get(entity.device_id)
     assert device.name == "Bright Rooms Kitchen"
     assert device.area_id == kitchen(entry).cfg.area_id
-    assert device.via_device_id == entry.runtime_data.device_id
+    # The zone's device hangs from its room's (the area), which hangs from the entry's.
+    area_device = dr.async_get(hass).async_get(device.via_device_id)
+    assert area_device.name == "Bright Rooms Kitchen"
+    assert area_device.area_id == kitchen(entry).cfg.area_id
+    assert area_device.via_device_id == entry.runtime_data.device_id
 
     await presence(hass, True)
     await settle(hass)

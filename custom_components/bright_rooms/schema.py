@@ -15,6 +15,7 @@ from homeassistant.helpers import selector
 
 from .const import (
     CONF_AREA,
+    CONF_AUTO_NEIGHBORS,
     CONF_BRIGHT_ABOVE,
     CONF_BRIGHT_MINUTES,
     CONF_BRIGHTNESS_DARK_LUX,
@@ -31,6 +32,7 @@ from .const import (
     CONF_LIGHTS,
     CONF_MIN_OFF_SECONDS,
     CONF_NAME,
+    CONF_NEIGHBOR_ZONES,
     CONF_OFF_WHEN_BRIGHT,
     CONF_ON_DELAY,
     CONF_ON_WHEN_DARK,
@@ -101,17 +103,47 @@ def _percent() -> selector.NumberSelector:
 # ------------------------------------------------------------------ rooms
 
 
-def room_schema() -> vol.Schema:
-    """Fields of a room.
+def zone_options(
+    hass: HomeAssistant, entry: ConfigEntry, exclude: str | None = None
+) -> list[tuple[str, str]]:
+    """Zones of the entry as (id, name), by name, without `exclude`."""
+    zones = [
+        (sid, room_title(hass, dict(sub.data), sub.title))
+        for sid, sub in entry.subentries.items()
+        if sub.subentry_type == SUBENTRY_ROOM and sid != exclude
+    ]
+    return sorted(zones, key=lambda z: z[1].casefold())
+
+
+def room_schema(zones: list[tuple[str, str]] | None = None) -> vol.Schema:
+    """Fields of a light zone.
 
     Presence sensors and lights are optional here so that a missing value
     comes back as a translated error (`validate_room`), not as "invalid".
+    `zones`: the zones offered as neighbours; None (validation only) accepts
+    any list of ids, checked by `validate_room`.
     """
+    neighbors: Any = (
+        selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(value=zid, label=name)
+                    for zid, name in zones
+                ],
+                multiple=True,
+                mode=selector.SelectSelectorMode.LIST,
+            )
+        )
+        if zones is not None
+        else vol.All(list, [str])
+    )
     return vol.Schema(
         {
             vol.Required(CONF_NAME): selector.TextSelector(),
             vol.Required(CONF_AREA): selector.AreaSelector(),
             vol.Optional(CONF_PRESENCE_SENSORS): SENSORS_SELECTOR,
+            vol.Required(CONF_AUTO_NEIGHBORS): selector.BooleanSelector(),
+            vol.Optional(CONF_NEIGHBOR_ZONES): neighbors,
             vol.Optional(CONF_ZONE_SENSORS): SENSORS_SELECTOR,
             vol.Optional(CONF_LIGHTS): LIGHTS_SELECTOR,
             vol.Optional(CONF_ILLUMINANCE_SENSOR): selector.EntitySelector(
@@ -179,6 +211,7 @@ def room_config(data: dict[str, Any]) -> dict[str, Any]:
     return {
         CONF_PRESENCE_SENSORS: [],
         CONF_ZONE_SENSORS: [],
+        CONF_NEIGHBOR_ZONES: [],
         CONF_LIGHTS: [],
         CONF_ILLUMINANCE_SENSOR: None,
         CONF_OTHER_LIGHTS: [],
@@ -199,6 +232,14 @@ def validate_room(
     errors: dict[str, str] = {}
     data = normalize_room(data)
     name = room_title(hass, data).casefold()
+    zones = {
+        sid
+        for sid, sub in entry.subentries.items()
+        if sub.subentry_type == SUBENTRY_ROOM
+    }
+    neighbors = data.get(CONF_NEIGHBOR_ZONES) or []
+    if any(z == current or z not in zones for z in neighbors):
+        errors[CONF_NEIGHBOR_ZONES] = "neighbor_invalid"
     other_lights: set[str] = set()
     for sub in entry.subentries.values():
         if sub.subentry_type != SUBENTRY_ROOM or sub.subentry_id == current:

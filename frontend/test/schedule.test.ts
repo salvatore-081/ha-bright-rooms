@@ -94,7 +94,7 @@ describe("band formatting", () => {
       "Dark · 19:00–23:30",
     );
     expect(conditionsText(band({ light: "dark", light_room: "gone" }), ctxIt, names)).toBe(
-      "Col buio (altra stanza) · 19:00–23:30",
+      "Col buio (altra zona) · 19:00–23:30",
     );
     expect(conditionsText(band({ start: null, end: null }), ctx)).toBe("Always");
   });
@@ -104,13 +104,13 @@ describe("band formatting", () => {
     expect(formatSeconds(120)).toBe("2 min");
     expect(formatSeconds(90)).toBe("1 min 30 s");
     expect(zoneText(null, it_)).toBe("");
-    expect(zoneText([], it_)).toBe("zona: nessuna");
-    expect(zoneText(["binary_sensor.a", "binary_sensor.b"], en)).toBe("zones: 2");
+    expect(zoneText([], it_)).toBe("presenze vicine: nessuna");
+    expect(zoneText(["binary_sensor.a", "binary_sensor.b"], en)).toBe("nearby presence: 2 sensors");
     expect(overridesText(band({ on_delay: 20, zone_wait: 300, zone_sensors: [] }), it_)).toBe(
-      "accensione 20 s · attesa 1 min 30 s · attesa con zona 5 min · zona: nessuna",
+      "accensione 20 s · attesa 1 min 30 s · attesa con presenze vicine 5 min · presenze vicine: nessuna",
     );
     expect(bandSummary(room().config.schedule![1], ctxIt, names)).toBe(
-      "Col buio (Tavolo) · Lun–Ven 17:00–23:00 · accensione 20 s · zona: nessuna",
+      "Col buio (Tavolo) · Lun–Ven 17:00–23:00 · accensione 20 s · presenze vicine: nessuna",
     );
     expect(bandName(band({ name: " " }), 1, it_)).toBe("Fascia 2");
   });
@@ -242,7 +242,7 @@ describe("band editor", () => {
     expect(rows[0].querySelector(".active-marker")?.textContent).toContain("Attiva ora");
     expect(text(rows[1])).toContain("Fascia 2");
     expect(text(rows[1])).toContain(
-      "Col buio (Tavolo) · Lun–Ven 17:00–23:00 · accensione 20 s · zona: nessuna",
+      "Col buio (Tavolo) · Lun–Ven 17:00–23:00 · accensione 20 s · presenze vicine: nessuna",
     );
     expect(rows[1].querySelector(".active-marker")).toBeNull();
     expect(root.querySelector(".body")).toBeNull(); // saved bands start closed
@@ -260,9 +260,9 @@ describe("band editor", () => {
       "Col buio",
     ]);
     const roomSelect = root.querySelector(".room-select") as HTMLSelectElement;
-    // This room is "questa stanza", not listed again.
+    // This room is "questa zona", not listed again.
     expect([...roomSelect.options].map((o) => o.textContent!.trim())).toEqual([
-      "questa stanza",
+      "questa zona",
       "Tavolo",
     ]);
     expect(roomSelect.value).toBe("sub-living");
@@ -271,7 +271,9 @@ describe("band editor", () => {
     expect(events.at(-1)![1].light_room).toBeNull();
     // The time window and days are shown, with the zone switch on and empty.
     expect(root.querySelectorAll('input[type="time"]')).toHaveLength(2);
-    expect(text(root.querySelector(".zones")!)).toContain("in questa fascia niente zona");
+    expect(text(root.querySelector(".zones")!)).toContain(
+      "in questa fascia niente presenze vicine",
+    );
     light.value = "";
     light.dispatchEvent(new Event("change"));
     expect(events.at(-1)![1]).toMatchObject({ light: null, light_room: null });
@@ -294,7 +296,7 @@ describe("band editor", () => {
     expect(events.at(-1)![2]).toMatchObject({ start: "17:00", end: "23:00" });
     expect(text(root.querySelector(".errors")!)).toContain("Change at least one setting.");
     const onDelay = root.querySelector('.body input[data-key="on_delay"]') as HTMLInputElement;
-    expect(onDelay.placeholder).toBe("room: 0");
+    expect(onDelay.placeholder).toBe("zone: 0");
     onDelay.value = "120";
     onDelay.dispatchEvent(new Event("input"));
     await el.updateComplete;
@@ -343,7 +345,7 @@ describe("tile with an active band", () => {
     });
     const root = await mount(el);
     expect(text(root)).toContain(
-      "Fascia: Fascia 2 · accensione 20 s · attesa 30 s · zona: nessuna",
+      "Fascia: Fascia 2 · accensione 20 s · attesa 30 s · presenze vicine: nessuna",
     );
   });
 });

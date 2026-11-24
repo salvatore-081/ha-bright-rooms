@@ -73,8 +73,10 @@ export const ROOM_GROUPS: { key: string; icon: string; fields: string[] }[] = [
   {
     key: "presence",
     icon: "mdi:motion-sensor",
-    fields: ["presence_sensors", "zone_sensors", "on_delay"],
+    fields: ["presence_sensors", "on_delay"],
   },
+  // Drawn by the editor itself (other zones), with these fields in an ha-form.
+  { key: "neighbors", icon: "mdi:account-multiple-outline", fields: ["zone_sensors"] },
   { key: "lights", icon: "mdi:lightbulb-group-outline", fields: ["lights", "min_off_seconds"] },
   {
     key: "daylight",
@@ -122,6 +124,32 @@ export const groupFields = (schema: FormField[]): FieldGroup[] => {
     schema: schema.filter((f) => !listed.has(f.name)),
   });
   return groups.filter((g) => g.schema.length > 0);
+};
+
+/** Fields the editor draws itself: the nearby zones. */
+export const NEIGHBOR_FIELDS = ["auto_neighbors", "neighbor_zones"];
+
+/** The schema without some fields, also inside sections. */
+export const withoutFields = (schema: FormField[], names: string[]): FormField[] =>
+  schema
+    .filter((f) => !names.includes(f.name))
+    .map((f) => (f.schema ? { ...f, schema: withoutFields(f.schema, names) } : f));
+
+/**
+ * The groups of the room form with the "neighbors" group always present
+ * (after "presence", or last), since the editor draws the nearby zones in it.
+ */
+export const zoneFormGroups = (schema: FormField[]): FieldGroup[] => {
+  const groups = groupFields(withoutFields(schema, NEIGHBOR_FIELDS));
+  if (groups.some((g) => g.key === "neighbors")) return groups;
+  const neighbors: FieldGroup = {
+    key: "neighbors",
+    icon: "mdi:account-multiple-outline",
+    schema: [],
+  };
+  const at = groups.findIndex((g) => g.key === "presence");
+  if (at < 0) return [...groups, neighbors];
+  return [...groups.slice(0, at + 1), neighbors, ...groups.slice(at + 1)];
 };
 
 /** Drop empty values (cleared fields), as the integration expects them missing. */

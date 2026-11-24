@@ -12,7 +12,7 @@ describe("form callbacks", () => {
   it("translates labels, helpers and errors", () => {
     expect(cb.computeLabel(field("dark_below"))).toBe("Buio sotto (lx)");
     expect(cb.computeHelper(field("zone_wait"))).toBe(
-      "Attesa massima in più finché un sensore vicino è acceso.",
+      "Attesa massima in più finché ci sono presenze vicine.",
     );
     expect(cb.computeHelper(field("dark_below"))).toBeUndefined();
     expect(cb.computeError("no_lights")).toBe("Scegli almeno una luce.");

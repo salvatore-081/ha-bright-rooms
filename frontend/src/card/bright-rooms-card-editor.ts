@@ -5,14 +5,14 @@ import { LitElement, type PropertyValues, html, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { fetchSnapshot } from "../api";
 import { type Localize, localizer } from "../localize";
-import type { HomeAssistant, RoomSnapshot } from "../types";
-import type { BrightRoomsCardConfig } from "./bright-rooms-card";
+import type { HomeAssistant, Snapshot } from "../types";
+import { type BrightRoomsCardConfig, cardChoices } from "./bright-rooms-card";
 
 @element("bright-rooms-card-editor")
 export class BrightRoomsCardEditor extends LitElement {
   @property({ attribute: false }) hass!: HomeAssistant;
   @state() private _config!: BrightRoomsCardConfig;
-  @state() private _rooms: RoomSnapshot[] = [];
+  @state() private _snapshot?: Snapshot;
   private _requested = false;
 
   setConfig(config: BrightRoomsCardConfig) {
@@ -27,8 +27,12 @@ export class BrightRoomsCardEditor extends LitElement {
     if (!this.hass || !changed.has("hass") || this._requested) return;
     this._requested = true;
     fetchSnapshot(this.hass)
-      .then((snap) => (this._rooms = snap.rooms))
-      .catch(() => (this._rooms = []));
+      .then((snap) => (this._snapshot = snap))
+      .catch(() => (this._snapshot = undefined));
+  }
+
+  private get _areaNames(): Record<string, string> {
+    return Object.fromEntries(Object.values(this.hass.areas ?? {}).map((a) => [a.area_id, a.name]));
   }
 
   render() {
@@ -42,7 +46,7 @@ export class BrightRoomsCardEditor extends LitElement {
           select: {
             multiple: true,
             mode: "list",
-            options: this._rooms.map((r) => ({ value: r.id, label: r.name })),
+            options: cardChoices(this._snapshot, this._areaNames),
           },
         },
       },

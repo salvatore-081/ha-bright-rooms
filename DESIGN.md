@@ -12,15 +12,33 @@ This file is the contract between the backend (`custom_components/bright_rooms`,
 
 ## Concepts
 
-- **Room**: a subentry (type `room`): a group of lights switched by its own presence sensors, with a unique
-  name, in a Home Assistant area. Several rooms may share an area (a kitchen with the cooktop lights on the
-  kitchen sensor and the table lamp on the table sensor). Subentries have no unique id; the subentry title,
-  the device name ("Bright Rooms ‹name›") and the snapshot `name` are the room's name. Rooms saved without a
-  name (0.1.0) are named after their area.
+Terminology (0.2.0): what earlier versions called a "room" is a **light zone**; a **room** is a Home
+Assistant area. Stored keys are unchanged: the subentry type stays `room`, the WebSocket keeps `room_id` and
+the `rooms` list (each item a zone), and the code keeps `RoomEngine`. In the rest of this file "room" in
+keys and in the engine's text means a light zone, unless it says area.
+
+- **Light zone** ("zona luce"): a subentry (type `room`): a group of lights switched by its own presence
+  sensors, with its illuminance sensor, settings and bands, a unique name, in a Home Assistant area. Several
+  zones may share an area (a kitchen with the cooktop lights on the kitchen sensor and the table lamp on the
+  table sensor). Subentries have no unique id; the subentry title, the device name ("Bright Rooms ‹name›")
+  and the snapshot `name` are the zone's name. Zones saved without a name (0.1.0) are named after their
+  area.
+- **Room**: a Home Assistant area; its light zones are grouped by their `area`. Nothing is configured on a
+  room. Each room with zones has a device "Bright Rooms ‹area name›" (in that area, `via_device` the entry's
+  device) with an **Automatic** switch for all its zones; the zones' devices hang from it.
+- **Nearby presence (neighbours)**: presence sensors of other places that make turning off wait longer
+  (people move between the cooktop and the table and come back). The effective neighbouring sensors of a
+  zone are, in this order and without repeats, minus the zone's own presence sensors:
+  1. **automatic** (`auto_neighbors`, default true): the presence sensors of the other zones of the same
+     area;
+  2. **manual** (`neighbor_zones`, default `[]`): the presence sensors of the chosen zones, of any area;
+  3. `zone_sensors`: an extra list of binary sensors ("nearby presence" / "presenze vicine").
+
+  A band's `zone_sensors` override, when not null, replaces the whole effective set (`[]` = none).
 - **Occupied**: at least one of the room's presence sensors is `on`. Unavailable/unknown sensors are
   ignored; if all are unavailable the room's occupancy is `None` and nothing is started or stopped by it.
-- **Zone**: presence sensors of nearby areas. While a zone sensor is `on`, turning off waits longer
-  (people move between the kitchen and the table and come back).
+- **Zone sensors** (in keys and texts below: `zone_sensors`, `zone_wait`, `zone_occupied`): the effective
+  neighbouring sensors above. While one is `on`, turning off waits longer.
 - **Raw lux**: the state of the room's illuminance sensor (optional).
 - **Contribution** of a light: lux it adds to the raw reading when on at full brightness. Learned, per room
   and light, stored with `homeassistant.helpers.storage.Store` (`bright_rooms.<entry_id>`), editable from the
@@ -48,14 +66,16 @@ This file is the contract between the backend (`custom_components/bright_rooms`,
     value; still undecided after that, it counts as dark (like no reading). Light-conditioned bands treat
     both cases as not met.
 
-## Room settings (subentry data)
+## Light zone settings (subentry data)
 
 | Key | Type | Default | Meaning |
 |---|---|---|---|
 | `name` | text | required | Name of the room, unique ignoring case (first field of the form) |
 | `area` | area id | required | Where the room's device goes; may be shared by several rooms |
 | `presence_sensors` | list of binary_sensor | required (≥1) | Union = occupied |
-| `zone_sensors` | list of binary_sensor | `[]` | Nearby areas, extend the wait before turning off |
+| `auto_neighbors` | bool | true | The other zones of the same area count as nearby presence |
+| `neighbor_zones` | list of zone ids | `[]` | Zones (any area) whose presence sensors count as nearby presence |
+| `zone_sensors` | list of binary_sensor | `[]` | Extra nearby presence ("presenze vicine"), extends the wait before turning off |
 | `lights` | list of light | required (≥1) | Lights switched by Bright Rooms |
 | `illuminance_sensor` | sensor (device_class illuminance) | none | Without it: always "dark", no brightness from light |
 | `other_lights` | list of light | `[]` | Other lights the illuminance sensor sees: a measurement is discarded if one changes |
@@ -77,7 +97,8 @@ This file is the contract between the backend (`custom_components/bright_rooms`,
 | `transition` | s, 0–30 | 3 | Transition of the final turn-off of dimmable lights |
 | `schedule` | list of bands | `[]` | Bands by time and/or light (below); edited in the panel, not in the ha-form schema |
 
-Validation errors (keys for translations): `name_taken` (another room has the same name, ignoring case), `no_presence`, `no_lights`, `bright_not_above_dark`,
+Validation errors (keys for translations): `name_taken` (another zone has the same name, ignoring case),
+`neighbor_invalid` (`neighbor_zones` must be existing zone ids other than the zone itself), `no_presence`, `no_lights`, `bright_not_above_dark`,
 `brightness_lux_order` (`brightness_full_lux` must be > `brightness_dark_lux`), `light_in_other_room` (a light
 can belong to one room only), `schedule_invalid` (below).
 
@@ -94,7 +115,8 @@ can belong to one room only), `schedule_invalid` (below).
     condition is not met.
   - At least one condition (time window or light) and at least one override.
   - Overrides: `on_delay` (0–600), `empty_wait`, `zone_wait` (0–3600), `zone_sensors` (list of
-    binary_sensor; `[]` = no zone in this band; null = room's own list).
+    binary_sensor; `[]` = no zone in this band; null = room's own list). Not null, it replaces the zone's
+    whole effective set of neighbouring sensors (automatic, manual and `zone_sensors`).
   - First active band in list order wins, as now. Existing bands (time only, empty_wait/zone_wait) stay
     valid unchanged (missing keys = null).
 - `id`: uuid hex, generated by the backend if missing (an existing `id` is kept; an empty or repeated one is
@@ -272,9 +294,16 @@ Every action records `last_action` = `{action, reason, at, detail}` with `action
 - **Status sensor attributes**: `last_action` is the action key; `reason`, `at` and `detail` come from the
   same record; `active_band` (see Bands).
 
-## Entities (one device per room, in the room's area, `via_device` the entry's device)
+## Entities
 
-- `switch` **Automatic** (`automatic`): room enabled; restored after a restart (default on).
+One device per light zone ("Bright Rooms ‹zone name›", in the zone's area, `via_device` its room's device);
+one device per room (area) with zones ("Bright Rooms ‹area name›", in the area, `via_device` the entry's
+device). Zone entities keep their unique ids (`<subentry_id>_<key>`), so their entity ids do not change.
+
+- Room device: `switch` **Automatic** (`area_automatic`, unique id `<entry_id>_area_<area_id>_automatic`):
+  on when any zone of the area is enabled; turning it on or off sets every zone of the area. A room left
+  without zones loses its device.
+- `switch` **Automatic** (`automatic`): zone enabled; restored after a restart (default on).
 - `sensor` **Ambient light** (`ambient_light`): lx, device_class illuminance, state_class measurement;
   attributes `raw` and `held` (bool).
 - `binary_sensor` **Dark** (`dark`): `on` when dark; unknown when `None`.
@@ -296,7 +325,10 @@ Types are in `frontend/src/types.ts`; snake_case keys as below.
 
   ```
   Snapshot = { entry_id: str, settings: {settle_seconds, learn_ambient_max, learn_min_previous, learn_weight},
-               rooms: RoomSnapshot[] }   // rooms in name order
+               rooms: RoomSnapshot[],    // light zones, in name order
+               areas: [{area_id, name, zone_ids: [subentry_id], enabled: bool}] }
+                                         // rooms (areas) by name; zones within by name;
+                                         // enabled: any zone of the area enabled
   RoomSnapshot = {
     id: subentry_id, name: str, area_id: str, enabled: bool, config: {room settings},
     status: "disabled"|"off"|"on"|"waiting"|"dimmed",
@@ -309,9 +341,11 @@ Types are in `frontend/src/types.ts`; snake_case keys as below.
                                    // values that apply now (band or room)
     lights: [{entity_id, name, state, brightness: 0-255|null, dimmable: bool,
               contribution: number|null, samples: int, updated: iso|null}],
-    sensor_entities: [entity_id]   // settings of the presence sensors: entities of the presence sensors'
+    sensor_entities: [entity_id],  // settings of the presence sensors: entities of the presence sensors'
                                    // devices with entity_category "config" and domain number, select,
                                    // switch or button (sensitivity, absence delay, ranges, calibration)
+    neighbors: {auto: [entity_id], manual_zones: [subentry_id], sensors: [entity_id],
+                effective: [entity_id]}   // nearby presence by origin (bands not applied)
   }
   ```
 - `bright_rooms/schema` `{room_id?}` → one result `{schema: FormField[], values: {}, settings_schema:
@@ -324,6 +358,14 @@ Types are in `frontend/src/types.ts`; snake_case keys as below.
   Room settings left out of `data` take their default; optional fields sent as null or "" are removed.
   `data.schedule` as in Bands (left out: unchanged); its errors come in the same `errors` object.
 - `bright_rooms/room/delete` `{room_id}`; `bright_rooms/room/set_enabled` `{room_id, enabled}`.
+  Deleting a zone removes it from the other zones' `neighbor_zones`, and bands whose `light_room` was that
+  zone fall back to null (the zone's own light). This cleanup happens when the entry reloads, so it also
+  applies to zones deleted from Home Assistant's integration page.
+- `bright_rooms/area/set_enabled` `{area_id, enabled}` (admin): every zone of the area; `not_found` if the
+  area has no zones.
+- `schema`: the room form has `auto_neighbors` (boolean) and `neighbor_zones` (select, multiple, options
+  `{value: zone id, label: zone name}` of the other zones, by name) after `presence_sensors`, then
+  `zone_sensors`.
 - `bright_rooms/contribution/set` `{room_id, entity_id, value: number|null}` (null = forget, learn again).
 - `bright_rooms/settings/save` `{data}` → `{}` or `{errors}`. Settings left out keep their current value.
 - `rooms` and `subscribe` answer `not_found` when Bright Rooms is not set up and `not_loaded` when its entry is
@@ -352,6 +394,6 @@ opens the panel room page. Visual editor (title, rooms).
 As Tidy Rooms: `hacs.json` with `zip_release` and `filename: bright_rooms.zip`, minimum Home Assistant
 `2026.10.0`; workflows Tests (pytest with `pytest-homeassistant-custom-component`, frontend lint, typecheck,
 vitest, build), Validate (HACS action, hassfest), Release (checks the tag against `manifest.json` and
-`frontend/package.json`, builds, uploads the zip). Version 0.1.7. `manifest.json`: `single_config_entry`
+`frontend/package.json`, builds, uploads the zip). Version 0.2.0. `manifest.json`: `single_config_entry`
 true, `integration_type` "service", `iot_class` "calculated", `dependencies` ["light"],
 `after_dependencies` ["frontend", "http", "websocket_api"]. Brand icon in `custom_components/bright_rooms/brand`.

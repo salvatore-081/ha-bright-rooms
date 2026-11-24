@@ -19,6 +19,7 @@ import { type Localize, localizer } from "../localize";
 import { BASE, navigate } from "../nav";
 import { shared, tokens } from "../styles";
 import type { HomeAssistant, RoomSnapshot, Snapshot } from "../types";
+import { type AreaGroup, areaSummary, groupByArea } from "../zones";
 
 export interface BrightRoomsCardConfig {
   type: string;
@@ -26,10 +27,40 @@ export interface BrightRoomsCardConfig {
   rooms?: string[];
 }
 
-/** The rooms the card shows: all, or the configured ones in snapshot order. */
+/**
+ * The light zones the card shows: all, or those chosen in the configuration,
+ * by zone id or by room (area id), in snapshot order.
+ */
 export const visibleRooms = (snapshot: Snapshot | undefined, wanted?: string[]): RoomSnapshot[] => {
   if (!snapshot) return [];
-  return wanted?.length ? snapshot.rooms.filter((r) => wanted.includes(r.id)) : snapshot.rooms;
+  return wanted?.length
+    ? snapshot.rooms.filter((r) => wanted.includes(r.id) || wanted.includes(r.area_id))
+    : snapshot.rooms;
+};
+
+/** The choices of the card editor: each room, then its zones as "Room · Zone". */
+export const cardChoices = (
+  snapshot: Snapshot | undefined,
+  areaNames: Record<string, string> = {},
+) =>
+  snapshot
+    ? groupByArea(snapshot, areaNames).flatMap((g) => [
+        { value: g.area.area_id, label: g.area.name },
+        ...g.zones.map((z) => ({ value: z.id, label: `${g.area.name} · ${z.name}` })),
+      ])
+    : [];
+
+/** The visible zones grouped by room. */
+export const visibleGroups = (
+  snapshot: Snapshot | undefined,
+  wanted?: string[],
+  areaNames: Record<string, string> = {},
+): AreaGroup[] => {
+  if (!snapshot) return [];
+  const shown = new Set(visibleRooms(snapshot, wanted).map((z) => z.id));
+  return groupByArea(snapshot, areaNames)
+    .map((g) => ({ ...g, zones: g.zones.filter((z) => shown.has(z.id)) }))
+    .filter((g) => g.zones.length > 0);
 };
 
 /** "Ambient 35 lx · 2 of 3 lights on". */
@@ -71,7 +102,8 @@ export class BrightRoomsCard extends LitElement {
   }
 
   getCardSize() {
-    return (this._config?.title ? 1 : 0) + (this._rooms().length || 3);
+    const groups = visibleGroups(this._snapshot, this._config?.rooms).length;
+    return (this._config?.title ? 1 : 0) + groups + (this._rooms().length || 3);
   }
 
   getGridOptions() {
@@ -93,6 +125,30 @@ export class BrightRoomsCard extends LitElement {
       }
       .rooms {
         padding: 4px 0 8px;
+      }
+      .area + .area {
+        border-top: 1px solid var(--br-border);
+        margin-top: 4px;
+        padding-top: 4px;
+      }
+      .area-head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        padding: 8px 16px 2px;
+      }
+      .area-name {
+        font-size: 0.8rem;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--br-muted);
+      }
+      .area-summary {
+        flex: 1;
+        text-align: right;
+        font-size: 0.8rem;
+        color: var(--br-muted);
       }
       .room {
         display: flex;
@@ -197,41 +253,56 @@ export class BrightRoomsCard extends LitElement {
 
   private _content(ctx: FormatContext) {
     const { t } = ctx;
-    const rooms = this._rooms();
-    if (!rooms.length) return html`<div class="message">${t("card.no_rooms")}</div>`;
+    const areaNames = Object.fromEntries(
+      Object.values(this.hass.areas ?? {}).map((a) => [a.area_id, a.name]),
+    );
+    const groups = visibleGroups(this._snapshot, this._config?.rooms, areaNames);
+    if (!groups.length) return html`<div class="message">${t("card.no_rooms")}</div>`;
     return html`<div class="rooms">
-      ${rooms.map((room) => {
-        const template = deadlineTemplate(room, t);
-        return html`<div
-          class="room tone-${statusTone(room.status)} ${room.enabled ? "" : "off"}"
-          role="link"
-          tabindex="0"
-          @click=${() => this._open(room)}
-          @keydown=${(ev: KeyboardEvent) => {
-            if (ev.key === "Enter") this._open(room);
-          }}
-        >
-          <ha-icon
-            class="icon"
-            .icon=${statusIcon(room.status)}
-            title=${statusLabel(room.status, t)}
-          ></ha-icon>
-          <div class="text">
-            <div class="rname">${room.name}</div>
-            <div class="detail">${roomDetail(room, ctx)}</div>
-          </div>
-          ${
-            template && room.deadline
-              ? html`<br-countdown
-                  class="countdown"
-                  .deadline=${room.deadline}
-                  .template=${"{time}"}
-                  title=${template.replaceAll("{time}", "").trim()}
-                ></br-countdown>`
-              : nothing
-          }
-        </div>`;
-      })}
+      ${groups.map(
+        (group) =>
+          html`<div class="area">
+            <div class="area-head">
+              <span class="area-name">${group.area.name}</span>
+              <span class="area-summary">${areaSummary(group, t)}</span>
+            </div>
+            ${group.zones.map((room) => this._zone(room, ctx))}
+          </div>`,
+      )}
+    </div>`;
+  }
+
+  private _zone(room: RoomSnapshot, ctx: FormatContext) {
+    const { t } = ctx;
+    const template = deadlineTemplate(room, t);
+    return html`<div
+      class="room tone-${statusTone(room.status)} ${room.enabled ? "" : "off"}"
+      role="link"
+      tabindex="0"
+      @click=${() => this._open(room)}
+      @keydown=${(ev: KeyboardEvent) => {
+        if (ev.key === "Enter") this._open(room);
+      }}
+    >
+      <ha-icon
+        class="icon"
+        .icon=${statusIcon(room.status)}
+        title=${statusLabel(room.status, t)}
+      ></ha-icon>
+      <div class="text">
+        <div class="rname">${room.name}</div>
+        <div class="detail">${roomDetail(room, ctx)}</div>
+      </div>
+      ${
+        template && room.deadline
+          ? html`<br-countdown
+              class="countdown"
+              .deadline=${room.deadline}
+              .template=${"{time}"}
+              title=${template.replaceAll("{time}", "").trim()}
+            ></br-countdown>`
+          : nothing
+      }
     </div>`;
   }
 

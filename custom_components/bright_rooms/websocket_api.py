@@ -30,6 +30,7 @@ from .schema import (
     settings,
     settings_schema,
     validate_room,
+    zone_options,
 )
 
 # At most one snapshot per subscription in this many seconds.
@@ -49,6 +50,7 @@ def async_register(hass: HomeAssistant) -> None:
         ws_room_save,
         ws_room_delete,
         ws_room_set_enabled,
+        ws_area_set_enabled,
         ws_contribution_set,
         ws_settings_save,
     ):
@@ -206,7 +208,9 @@ async def ws_schema(
     connection.send_result(
         msg["id"],
         {
-            "schema": _serialize(room_schema()),
+            "schema": _serialize(
+                room_schema(zone_options(hass, entry, msg.get("room_id")))
+            ),
             "values": {k: v for k, v in values.items() if v is not None},
             "settings_schema": _serialize(settings_schema()),
             "settings": settings(entry),
@@ -367,3 +371,24 @@ async def ws_settings_save(
         entry, options={**entry.options, **normalize_settings(data)}
     )
     connection.send_result(msg["id"], {})
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "bright_rooms/area/set_enabled",
+        vol.Required("area_id"): str,
+        vol.Required("enabled"): bool,
+    }
+)
+@websocket_api.async_response
+@_handle
+async def ws_area_set_enabled(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """A room's Automatic switch: every light zone of the area."""
+    engine = _engine(hass)
+    if msg["area_id"] not in engine.area_ids():
+        raise _Error(ERR_NOT_FOUND, "No light zone in this area")
+    engine.set_area_enabled(msg["area_id"], msg["enabled"])
+    connection.send_result(msg["id"])

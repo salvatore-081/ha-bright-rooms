@@ -29,6 +29,10 @@ export const deleteRoom = (hass: HomeAssistant, roomId: string) =>
 export const setRoomEnabled = (hass: HomeAssistant, roomId: string, enabled: boolean) =>
   hass.callWS<null>({ type: "bright_rooms/room/set_enabled", room_id: roomId, enabled });
 
+/** Switch Automatic for every light zone of a room (area). */
+export const setAreaEnabled = (hass: HomeAssistant, areaId: string, enabled: boolean) =>
+  hass.callWS<null>({ type: "bright_rooms/area/set_enabled", area_id: areaId, enabled });
+
 /** Set a light's contribution by hand; null forgets it, so it is learned again. */
 export const setContribution = (
   hass: HomeAssistant,

@@ -30,7 +30,8 @@ class BrightRoomsRoomEntity(Entity):
             name=f"{TITLE} {room.name}",
             suggested_area=area.name if area else None,
             entry_type=DeviceEntryType.SERVICE,
-            via_device_id=engine.device_id,
+            via_device_id=engine.area_device_ids.get(room.cfg.area_id)
+            or engine.device_id,
         )
 
     async def async_added_to_hass(self) -> None:

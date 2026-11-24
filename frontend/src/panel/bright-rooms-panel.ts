@@ -8,7 +8,7 @@ import "./br-view-overview";
 import "./br-view-rooms";
 import "./br-room-editor";
 import "./br-view-settings";
-import { errorMessage, setRoomEnabled, subscribeSnapshot } from "../api";
+import { errorMessage, setAreaEnabled, setRoomEnabled, subscribeSnapshot } from "../api";
 import { type FormatContext, formatContext } from "../format";
 import { loadHaForm } from "../load-ha-elements";
 import { type Localize, localizer } from "../localize";
@@ -210,7 +210,13 @@ export class BrightRoomsPanel extends LitElement {
           )}
         </nav>
       </div>
-      <main @set-enabled=${this._setEnabled} @open-room=${this._openRoom}>${this._content()}</main>
+      <main
+        @set-enabled=${this._setEnabled}
+        @set-area-enabled=${this._setAreaEnabled}
+        @open-room=${this._openRoom}
+      >
+        ${this._content()}
+      </main>
     `;
   }
 
@@ -222,7 +228,11 @@ export class BrightRoomsPanel extends LitElement {
     const ctx = this._ctx;
     switch (this._tab) {
       case "overview":
-        return html`<br-view-overview .snapshot=${snap} .ctx=${ctx}></br-view-overview>`;
+        return html`<br-view-overview
+          .snapshot=${snap}
+          .ctx=${ctx}
+          .areaNames=${this._areaNames}
+        ></br-view-overview>`;
       case "rooms": {
         const id = this._segments[1];
         if (id)
@@ -237,6 +247,7 @@ export class BrightRoomsPanel extends LitElement {
           .hass=${this.hass}
           .snapshot=${snap}
           .ctx=${ctx}
+          .areaNames=${this._areaNames}
         ></br-view-rooms>`;
       }
       case "settings":
@@ -261,6 +272,19 @@ export class BrightRoomsPanel extends LitElement {
       notify(this, errorMessage(err));
       this._now = new Date(); // redraw the switch with the real state
     }
+  }
+
+  private async _setAreaEnabled(ev: CustomEvent<{ area: string; enabled: boolean }>) {
+    try {
+      await setAreaEnabled(this.hass, ev.detail.area, ev.detail.enabled);
+    } catch (err) {
+      notify(this, errorMessage(err));
+      this._now = new Date(); // redraw the switch with the real state
+    }
+  }
+
+  private get _areaNames(): Record<string, string> {
+    return Object.fromEntries(Object.values(this.hass.areas ?? {}).map((a) => [a.area_id, a.name]));
   }
 
   private _openRoom(ev: CustomEvent<{ room: string }>) {

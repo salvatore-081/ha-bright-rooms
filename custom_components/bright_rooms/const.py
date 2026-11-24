@@ -30,6 +30,10 @@ CONF_NAME: Final = "name"
 CONF_AREA: Final = "area"
 CONF_PRESENCE_SENSORS: Final = "presence_sensors"
 CONF_ZONE_SENSORS: Final = "zone_sensors"
+# Presence sensors of the other zones of the same area count as nearby presence.
+CONF_AUTO_NEIGHBORS: Final = "auto_neighbors"
+# Zones (of any area) whose presence sensors count as nearby presence.
+CONF_NEIGHBOR_ZONES: Final = "neighbor_zones"
 CONF_LIGHTS: Final = "lights"
 CONF_ILLUMINANCE_SENSOR: Final = "illuminance_sensor"
 CONF_OTHER_LIGHTS: Final = "other_lights"
@@ -52,6 +56,7 @@ CONF_TRANSITION: Final = "transition"
 CONF_SCHEDULE: Final = "schedule"
 
 ROOM_DEFAULTS: Final[dict[str, object]] = {
+    CONF_AUTO_NEIGHBORS: True,
     CONF_ON_DELAY: 0,
     CONF_ONLY_WHEN_DARK: True,
     CONF_DARK_BELOW: 40,

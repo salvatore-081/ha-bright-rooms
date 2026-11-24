@@ -84,6 +84,10 @@ export interface RoomConfig {
   dim_percent?: number;
   dim_wait?: number;
   transition?: number;
+  /** Presence sensors of the other zones in the same area count as nearby presence. */
+  auto_neighbors?: boolean;
+  /** Zones (of any area) whose presence sensors count as nearby presence. */
+  neighbor_zones?: string[];
   /** Time bands, at most 8; the first active one wins. */
   schedule?: Band[];
   [key: string]: unknown;
@@ -123,6 +127,8 @@ export interface RoomSnapshot {
   last_action: LastAction | null;
   /** What Bright Rooms is still trying to reach (retries, lights coming back). */
   goal?: "on" | "off" | null;
+  /** Where the nearby presence comes from, and the sensors in force. */
+  neighbors?: Neighbors;
   /** The id of the time band in force, if any. */
   active_band?: string | null;
   /** The values in force (the active band's, or the room's). */
@@ -137,6 +143,28 @@ export interface RoomSnapshot {
   sensor_entities: string[];
 }
 
+/** Nearby presence of a zone (entity ids, zone ids). */
+export interface Neighbors {
+  /** Presence sensors of the other zones of the same area (auto_neighbors). */
+  auto: string[];
+  /** Zones chosen by hand (neighbor_zones). */
+  manual_zones: string[];
+  /** Extra sensors (zone_sensors). */
+  sensors: string[];
+  /** The sensors in force now (an active band may replace them). */
+  effective: string[];
+}
+
+/** A room: a Home Assistant area and its light zones. */
+export interface AreaSnapshot {
+  area_id: string;
+  name: string;
+  /** In name order. */
+  zone_ids: string[];
+  /** The room's Automatic switch, as the integration reports it. */
+  enabled: boolean;
+}
+
 export interface GlobalSettings {
   settle_seconds: number;
   learn_ambient_max: number;
@@ -147,8 +175,10 @@ export interface GlobalSettings {
 export interface Snapshot {
   entry_id: string;
   settings: GlobalSettings;
-  /** In area name order. */
+  /** The light zones (named "rooms" in the contract), in name order. */
   rooms: RoomSnapshot[];
+  /** The rooms (areas) grouping the zones, in name order. */
+  areas?: AreaSnapshot[];
 }
 
 /** A field of ha-form, as serialized by the integration (probatio.to_field_list). */

@@ -62,6 +62,12 @@ export const room = (over: Partial<RoomSnapshot> = {}): RoomSnapshot => ({
       },
     ],
   },
+  neighbors: {
+    auto: [],
+    manual_zones: [],
+    sensors: ["binary_sensor.salone_presenza"],
+    effective: ["binary_sensor.salone_presenza"],
+  },
   active_band: "band-evening",
   effective: {
     on_delay: 0,
@@ -123,6 +129,10 @@ export const snapshot = (over: Partial<Snapshot> = {}): Snapshot => ({
         light({ entity_id: "light.salone", name: "Salone", state: "off", brightness: null }),
       ],
     }),
+  ],
+  areas: [
+    { area_id: "cucina", name: "Cucina", zone_ids: ["sub-kitchen"], enabled: true },
+    { area_id: "salone", name: "Salone", zone_ids: ["sub-living"], enabled: false },
   ],
   ...over,
 });

@@ -38,6 +38,7 @@ from homeassistant.core import (
     callback,
 )
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
@@ -58,6 +59,7 @@ from .ambient import (
 )
 from .const import (
     CONF_AREA,
+    CONF_AUTO_NEIGHBORS,
     CONF_BRIGHT_ABOVE,
     CONF_BRIGHT_MINUTES,
     CONF_BRIGHTNESS_DARK_LUX,
@@ -74,6 +76,7 @@ from .const import (
     CONF_LIGHTS,
     CONF_MIN_OFF_SECONDS,
     CONF_NAME,
+    CONF_NEIGHBOR_ZONES,
     CONF_OFF_WHEN_BRIGHT,
     CONF_ON_DELAY,
     CONF_ON_WHEN_DARK,
@@ -140,6 +143,8 @@ class RoomConfig:
     area_id: str
     presence_sensors: tuple[str, ...]
     zone_sensors: tuple[str, ...]
+    auto_neighbors: bool
+    neighbor_zones: tuple[str, ...]
     lights: tuple[str, ...]
     illuminance_sensor: str | None
     other_lights: tuple[str, ...]
@@ -169,6 +174,8 @@ class RoomConfig:
             area_id=d[CONF_AREA],
             presence_sensors=tuple(d.get(CONF_PRESENCE_SENSORS) or ()),
             zone_sensors=tuple(d.get(CONF_ZONE_SENSORS) or ()),
+            auto_neighbors=bool(d[CONF_AUTO_NEIGHBORS]),
+            neighbor_zones=tuple(d.get(CONF_NEIGHBOR_ZONES) or ()),
             lights=tuple(d.get(CONF_LIGHTS) or ()),
             illuminance_sensor=d.get(CONF_ILLUMINANCE_SENSOR) or None,
             other_lights=tuple(d.get(CONF_OTHER_LIGHTS) or ()),
@@ -381,9 +388,39 @@ class RoomEngine:
             return None
         return any(s.state == STATE_ON for s in valid)
 
+    def neighbors(self) -> dict[str, list[str]]:
+        """Nearby presence: the zone's neighbouring sensors, by origin.
+
+        `auto`: presence sensors of the other zones of the same area (with
+        `auto_neighbors`); `manual_zones`: the zones chosen as neighbours;
+        `sensors`: the zone's own extra list (`zone_sensors`); `effective`:
+        all of them, without this zone's own presence sensors and repeats.
+        """
+        cfg = self.cfg
+        zones = self.parent.rooms
+        auto: list[str] = []
+        if cfg.auto_neighbors:
+            for zone in zones.values():
+                if zone is not self and zone.cfg.area_id == cfg.area_id:
+                    auto.extend(zone.cfg.presence_sensors)
+        manual = [z for z in cfg.neighbor_zones if z in zones and z != self.subentry_id]
+        from_manual = [e for z in manual for e in zones[z].cfg.presence_sensors]
+        own = set(cfg.presence_sensors)
+        effective = [
+            e
+            for e in dict.fromkeys([*auto, *from_manual, *cfg.zone_sensors])
+            if e not in own
+        ]
+        return {
+            "auto": list(dict.fromkeys(e for e in auto if e not in own)),
+            "manual_zones": manual,
+            "sensors": list(cfg.zone_sensors),
+            "effective": effective,
+        }
+
     def _all_zone_sensors(self) -> set[str]:
         """The room's zone sensors and those of its bands."""
-        sensors = set(self.cfg.zone_sensors)
+        sensors = set(self.neighbors()["effective"])
         for band in self.cfg.schedule:
             sensors.update(band.zone_sensors or ())
         return sensors
@@ -1174,7 +1211,7 @@ class RoomEngine:
             "on_delay": int(cfg.on_delay),
             "empty_wait": int(cfg.empty_wait),
             "zone_wait": int(cfg.zone_wait),
-            "zone_sensors": list(cfg.zone_sensors),
+            "zone_sensors": list(self.neighbors()["effective"]),
         }
         band = self.active_band(now)
         if band is not None:
@@ -1473,6 +1510,7 @@ class RoomEngine:
             "effective": self.effective(),
             "lights": lights,
             "sensor_entities": self.sensor_entities(),
+            "neighbors": self.neighbors(),
         }
 
 
@@ -1501,6 +1539,8 @@ class BrightRoomsEngine:
         self.settings = settings(entry)
         self.store = BrightRoomsStore(hass, entry.entry_id)
         self.device_id: str | None = None  # set by async_setup_entry
+        # Device of each room (area), set by async_setup_entry.
+        self.area_device_ids: dict[str, str] = {}
         self.running = False  # between async_start and async_stop
         self.rooms: dict[str, RoomEngine] = {
             sub.subentry_id: RoomEngine(
@@ -1548,8 +1588,36 @@ class BrightRoomsEngine:
                 self.notify(other)
 
     def set_room_enabled(self, room_id: str, enabled: bool) -> None:
-        """Automatic switch of a room."""
+        """Automatic switch of a light zone."""
         self.rooms[room_id].set_enabled(enabled)
+
+    def area_name(self, area_id: str) -> str:
+        """A room's name (the Home Assistant area)."""
+        area = ar.async_get(self.hass).async_get_area(area_id)
+        return area.name if area else area_id
+
+    def area_zones(self, area_id: str) -> list[RoomEngine]:
+        """The light zones of a room, by name."""
+        return sorted(
+            (z for z in self.rooms.values() if z.cfg.area_id == area_id),
+            key=lambda z: z.name.casefold(),
+        )
+
+    def area_ids(self) -> list[str]:
+        """Rooms (areas) that have light zones, by name."""
+        return sorted(
+            {z.cfg.area_id for z in self.rooms.values()},
+            key=lambda a: self.area_name(a).casefold(),
+        )
+
+    def area_enabled(self, area_id: str) -> bool:
+        """A room is on when any of its zones is."""
+        return any(z.enabled for z in self.area_zones(area_id))
+
+    def set_area_enabled(self, area_id: str, enabled: bool) -> None:
+        """The room's Automatic switch: every zone of the area."""
+        for zone in self.area_zones(area_id):
+            zone.set_enabled(enabled)
 
     def set_contribution(
         self, room_id: str, entity_id: str, value: float | None
@@ -1575,4 +1643,13 @@ class BrightRoomsEngine:
             "entry_id": self.entry.entry_id,
             "settings": dict(self.settings),
             "rooms": [r.snapshot() for r in rooms],
+            "areas": [
+                {
+                    "area_id": area_id,
+                    "name": self.area_name(area_id),
+                    "zone_ids": [z.subentry_id for z in self.area_zones(area_id)],
+                    "enabled": self.area_enabled(area_id),
+                }
+                for area_id in self.area_ids()
+            ],
         }
