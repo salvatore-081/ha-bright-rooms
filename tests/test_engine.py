@@ -158,8 +158,10 @@ async def test_min_off_seconds(
 async def test_light_already_on(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    entry, lights = await make(hass, freezer)
+    """Found on at startup; someone comes in during the startup grace."""
     set_light(hass, STRIP, "on")
+    entry, lights = await make(hass, freezer)
+    await advance(hass, freezer, 5)
     await presence(hass, True)
     await settle(hass)
     assert lights.calls == []
@@ -428,16 +430,19 @@ async def test_startup_turn_off_skipped(
     assert kitchen(entry).status == "on"
 
 
-async def test_startup_turn_off_skipped_after_a_change_by_hand(
+async def test_change_by_hand_during_the_startup_grace(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
+    """No startup turn-off, but the room is empty with a light on: the waits run."""
     set_light(hass, CEILING, "on")
-    entry, lights = await make(hass, freezer)
+    _entry, lights = await make(hass, freezer, dim_percent=100)
     await advance(hass, freezer, 10)
     set_light(hass, CEILING, "on", brightness=100)
-    await advance(hass, freezer, 120, step=10)
+    await advance(hass, freezer, 29)
     assert lights.calls == []
-    assert kitchen(entry).status == "on"
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert [c.service for c in lights.calls] == ["turn_off"]
 
 
 async def test_nothing_turned_on_at_startup(
@@ -453,15 +458,16 @@ async def test_nothing_turned_on_at_startup(
 async def test_unavailable_presence_does_not_turn_off(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    _entry, lights = await _lights_on(hass, freezer)
+    entry, lights = await _lights_on(hass, freezer)
     hass.states.async_set(PRESENCE, "unavailable")
     await hass.async_block_till_done()
-    await presence(hass, False)
     await advance(hass, freezer, 600, step=30)
     assert lights.calls == []
-
-
-# ----------------------------------------------------------------- turn off
+    # Known to be empty again with the lights on: the usual waits, then off.
+    await presence(hass, False)
+    await advance(hass, freezer, 40)
+    await settle(hass)
+    assert kitchen(entry).status == "off"
 
 
 async def test_off_sequence_dims_then_turns_off(
@@ -617,7 +623,7 @@ async def test_presence_back_while_waiting_changes_nothing(
     assert _last(room) == ("turned_on", "presence_dark")
 
 
-async def test_change_by_someone_else_cancels_turning_off(
+async def test_change_by_someone_else_restarts_the_waits(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     entry, lights = await _lights_on(hass, freezer)
@@ -626,10 +632,13 @@ async def test_change_by_someone_else_cancels_turning_off(
     await advance(hass, freezer, 10)
     set_light(hass, CEILING, "on", brightness=100)
     await hass.async_block_till_done()
-    assert room.status == "on"
-    await advance(hass, freezer, 120, step=5)
+    assert room.status == "waiting"  # the empty wait starts again
+    await advance(hass, freezer, 29)
     await settle(hass)
     assert lights.calls == []
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert room.status == "dimmed"
 
 
 async def test_change_by_someone_else_while_dimmed_touches_nothing(
@@ -641,9 +650,10 @@ async def test_change_by_someone_else_while_dimmed_touches_nothing(
     await settle(hass)
     lights.clear()
     set_light(hass, STRIP, "off")
-    await advance(hass, freezer, 30)
+    await advance(hass, freezer, 29)
     await presence(hass, True)
     await settle(hass)
+    # The dimmed light is left as it is; the waits had started again.
     assert lights.calls == []
     assert hass.states.get(CEILING).attributes["brightness"] == 76
 
@@ -755,7 +765,7 @@ async def test_light_turned_on_when_already_bright_stays_on(
 async def test_ambient_held_after_a_light_change(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    entry, _ = await make(hass, freezer, lux="30")
+    entry, _ = await make(hass, freezer, empty_wait=3600, lux="30")
     _learn(entry, CEILING, 100)
     room = kitchen(entry)
     set_light(hass, CEILING, "on")
@@ -797,7 +807,9 @@ async def test_ambient_held_while_contribution_unknown(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     # Too bright to learn: the contribution stays unknown.
-    entry, _ = await make(hass, freezer, lux="30", options={"learn_ambient_max": 10})
+    entry, _ = await make(
+        hass, freezer, empty_wait=3600, lux="30", options={"learn_ambient_max": 10}
+    )
     room = kitchen(entry)
     set_light(hass, STRIP, "on")
     await lux(hass, 90)
@@ -833,7 +845,7 @@ async def _measure(
 async def test_learns_when_turned_on_and_off(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    entry, _ = await make(hass, freezer)
+    entry, _ = await make(hass, freezer, empty_wait=3600)
     room = kitchen(entry)
     await _measure(hass, freezer)
     c = room.contribution(CEILING)
@@ -852,7 +864,7 @@ async def test_learns_when_turned_on_and_off(
 async def test_learning_normalized_by_brightness(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    entry, _ = await make(hass, freezer)
+    entry, _ = await make(hass, freezer, empty_wait=3600)
     await _measure(hass, freezer, before=10, after=60, brightness=128)
     assert kitchen(entry).contribution(CEILING).value == 100
 
@@ -860,7 +872,7 @@ async def test_learning_normalized_by_brightness(
 async def test_learning_on_off_light(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    entry, _ = await make(hass, freezer)
+    entry, _ = await make(hass, freezer, empty_wait=3600)
     await _measure(hass, freezer, light=STRIP, before=10, after=40)
     assert kitchen(entry).contribution(STRIP).value == 30
 
@@ -906,7 +918,7 @@ async def test_group_with_two_unknown_lights_not_learned(
 async def test_group_all_known_scaled_together(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    entry, _ = await make(hass, freezer)
+    entry, _ = await make(hass, freezer, empty_wait=3600)
     _learn(entry, CEILING, 100)
     _learn(entry, STRIP, 50)
     await lux(hass, 10)
@@ -926,7 +938,7 @@ async def test_group_by_context(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     """The same context joins the group also after 2 s (a slow light)."""
-    entry, _ = await make(hass, freezer)
+    entry, _ = await make(hass, freezer, empty_wait=3600)
     _learn(entry, STRIP, 30)
     context = Context()
     await lux(hass, 10)
@@ -1003,7 +1015,7 @@ async def test_not_learned_when_another_room_light_changed_before(
 async def test_learned_when_other_light_changed_long_before(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
-    entry, _ = await make(hass, freezer)
+    entry, _ = await make(hass, freezer, empty_wait=3600)
     _learn(entry, STRIP, 30)
     set_light(hass, STRIP, "on")
     await advance(hass, freezer, 31)
@@ -1041,7 +1053,7 @@ async def test_unrelated_light_does_not_spoil(
     hass: HomeAssistant, freezer: FrozenDateTimeFactory
 ) -> None:
     """OTHER is not among the room's other lights here."""
-    entry, _ = await make(hass, freezer)
+    entry, _ = await make(hass, freezer, empty_wait=3600)
     await lux(hass, 10)
     set_light(hass, CEILING, "on")
     await advance(hass, freezer, 10)
@@ -1512,8 +1524,10 @@ async def test_back_after_someone_else_changed_a_light(
     set_light(hass, STRIP, "on")  # by hand
     await presence(hass, True)
     await settle(hass)
+    # Not turned back on (the strip was turned on by hand, which started the
+    # empty waits); the arrival cancels them.
     assert lights.calls == []
-    assert _last(kitchen(entry)) == ("skipped_on", "lights_already_on")
+    assert kitchen(entry).status == "on"
 
 
 async def test_no_reentry_after_the_bright_turn_off(
@@ -1530,3 +1544,115 @@ async def test_no_reentry_after_the_bright_turn_off(
     await settle(hass)
     assert lights.calls == []
     assert _last(kitchen(entry)) == ("skipped_on", "not_dark")
+
+
+# -------------------------------------------------- empty room, lights on
+
+
+async def test_night_failed_turn_off_then_flapping_light(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """04:36 on; 04:38:55 turn-off raised; unavailable; a brief arrival while
+    unavailable; 04:54 back on with the room empty: off after the waits."""
+    entry, lights = await _lights_on(hass, freezer, lights=[CEILING], dim_percent=100)
+    room = kitchen(entry)
+    lights.failures = 1
+    await presence(hass, False)
+    await advance(hass, freezer, 30)
+    await settle(hass)
+    assert _last(room) == ("failed", "empty")
+    await advance(hass, freezer, 2)
+    hass.states.async_set(CEILING, "unavailable")
+    await advance(hass, freezer, 49)
+    await presence(hass, True)  # clears the off goal
+    await advance(hass, freezer, 21)
+    await presence(hass, False)  # the light is unavailable: nothing to do yet
+    await advance(hass, freezer, 14 * 60, step=60)
+    lights.clear()
+    set_light(hass, CEILING, "on")  # back, with the relay on
+    await settle(hass)
+    assert room.status == "waiting"
+    await advance(hass, freezer, 29)
+    assert lights.calls == []
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert [c.service for c in lights.calls] == ["turn_off"]
+    assert hass.states.get(CEILING).state == "off"
+    assert _last(room) == ("turned_off", "empty")
+
+
+async def test_night_light_back_on_in_an_empty_room(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    """00:18 unavailable with the room empty, 01:21 back on: off after the waits."""
+    entry, lights = await make(hass, freezer, lights=[CEILING], dim_percent=100)
+    hass.states.async_set(CEILING, "unavailable")
+    await advance(hass, freezer, 3600, step=600)
+    set_light(hass, CEILING, "on")
+    await advance(hass, freezer, 30)
+    await settle(hass)
+    assert [c.service for c in lights.calls] == ["turn_off"]
+    assert kitchen(entry).status == "off"
+
+
+async def test_wall_switch_in_an_empty_room(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(hass, freezer)
+    set_light(hass, STRIP, "on")  # wall switch, nobody detected
+    await hass.async_block_till_done()
+    assert kitchen(entry).status == "waiting"
+    await advance(hass, freezer, 29)
+    assert lights.calls == []
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert [c.service for c in lights.calls] == ["turn_off"]
+    assert _last(kitchen(entry)) == ("turned_off", "empty")
+
+
+async def test_light_on_in_an_empty_room_with_the_zone_occupied(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(hass, freezer)
+    hass.states.async_set(ZONE, "on")
+    set_light(hass, STRIP, "on")
+    await advance(hass, freezer, 150 + 29, step=1)
+    assert lights.calls == []
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert [c.service for c in lights.calls] == ["turn_off"]
+    assert _last(kitchen(entry)) == ("turned_off", "zone_timeout")
+
+
+async def test_light_on_in_an_empty_room_uses_the_band(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    _entry, lights = await make(hass, freezer, schedule=[BAND_EVENING])
+    set_light(hass, STRIP, "on")
+    await advance(hass, freezer, 119, step=7)
+    assert lights.calls == []
+    await advance(hass, freezer, 1)
+    await settle(hass)
+    assert [c.service for c in lights.calls] == ["turn_off"]
+
+
+async def test_light_on_in_an_empty_disabled_room(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(hass, freezer)
+    kitchen(entry).set_enabled(False)
+    set_light(hass, STRIP, "on")
+    await advance(hass, freezer, 600, step=30)
+    assert lights.calls == []
+
+
+async def test_someone_back_while_the_waits_run(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, lights = await make(hass, freezer)
+    set_light(hass, STRIP, "on")
+    await advance(hass, freezer, 20)
+    await presence(hass, True)
+    await advance(hass, freezer, 120, step=10)
+    assert lights.calls == []
+    assert kitchen(entry).status == "on"

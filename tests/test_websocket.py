@@ -489,7 +489,7 @@ def test_versions_match() -> None:
         (root / "custom_components/bright_rooms/manifest.json").read_text()
     )
     frontend = json.loads((root / "frontend/package.json").read_text())
-    assert manifest["version"] == frontend["version"] == "0.1.4"
+    assert manifest["version"] == frontend["version"] == "0.1.5"
 
 
 async def test_schedule_save_and_round_trip(

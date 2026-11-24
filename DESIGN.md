@@ -126,8 +126,19 @@ Status (`status` sensor, enum): `disabled` (switch off), `off` (lights off), `on
    4. turn off the lights that are on (dimmable with `transition`).
 
    Cancelled when the room is occupied again (dimmed lights go back to the remembered brightness; nothing
-   else changes) or when a room light is changed by someone else (nothing is touched). Never switches a light
+   else changes) or when a room light is changed by someone else (nothing is touched; if the room is still
+   empty with a light on, the sequence starts again from the beginning, see below). Never switches a light
    off and on again (no flicker). Disabling the room cancels it without touching the lights.
+
+   **Empty room with a light on.** Not only at the falling edge: whenever the room is known to be empty
+   (occupied `False`), enabled, and a room light is seen `on` (back from unavailable/unknown already on,
+   turned on by someone else or by a wall switch, still on after a departure seen while the lights were
+   unavailable, or after a turn-off that gave up), the same sequence starts (zone wait, empty wait from the
+   active band, dimming, off), reason `empty` (or `zone_timeout`). It is checked on every state change the
+   room follows, and does not start while a sequence or a turn-on is pending, while a turn-off is still being
+   retried (an `off` goal whose attempts are not used up) or in flight (re-entry), or during the startup
+   grace. A light turned on by someone else while the room is empty is therefore turned off after the waits;
+   an occupancy rise never loses this: after the next departure the rule applies again.
 3. **Turn off when bright** – when dark goes from `True` to `False` and stays `False` for `bright_minutes`,
    with `off_when_bright` and lights on: turn them off (dimmable with `transition`), also with people in the
    room. Only on that transition: a light turned on by hand when it is already bright stays on.
@@ -207,8 +218,9 @@ Every action records `last_action` = `{action, reason, at, detail}` with `action
 ### Details fixed by the implementation
 
 - **Edges of occupancy**: only `False → True` is an arrival and `True → False` a departure; changes to or
-  from `None` (all presence sensors unavailable) start and stop nothing, except that a pending turn-on is
-  dropped.
+  from `None` (all presence sensors unavailable) are not edges and drop a pending turn-on. A room that
+  becomes known empty (`None → False`) with a light on gets the empty sequence (step 2, empty room with a
+  light on).
 - **Pending turn-on** (`on_delay`, `min_off_seconds`): dropped when presence ends; when a room light is
   changed by someone else meanwhile, it is dropped and recorded as `skipped_on` / `changed_by_someone_else`.
   A turn-off sequence cancelled by someone else records no action (the last one stays).
@@ -311,6 +323,6 @@ opens the panel room page. Visual editor (title, rooms).
 As Tidy Rooms: `hacs.json` with `zip_release` and `filename: bright_rooms.zip`, minimum Home Assistant
 `2026.10.0`; workflows Tests (pytest with `pytest-homeassistant-custom-component`, frontend lint, typecheck,
 vitest, build), Validate (HACS action, hassfest), Release (checks the tag against `manifest.json` and
-`frontend/package.json`, builds, uploads the zip). Version 0.1.4. `manifest.json`: `single_config_entry`
+`frontend/package.json`, builds, uploads the zip). Version 0.1.5. `manifest.json`: `single_config_entry`
 true, `integration_type` "service", `iot_class` "calculated", `dependencies` ["light"],
 `after_dependencies` ["frontend", "http", "websocket_api"]. Brand icon in `custom_components/bright_rooms/brand`.

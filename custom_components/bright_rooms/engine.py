@@ -444,7 +444,32 @@ class RoomEngine:
             self._on_presence(now)
         if entity_id in cfg.zone_sensors:
             self._on_zone(now)
+        self._check_empty_lights_on(now)
         self.parent.notify(self)
+
+    def _check_empty_lights_on(self, now: datetime) -> None:
+        """An empty room with a light on gets the normal turn-off sequence.
+
+        Covers a light back from unavailable already on, one turned on by
+        someone else or by a wall switch, and a departure seen while the
+        lights were unavailable. Not while something else is in progress: a
+        sequence, a pending turn-on, a turn-off still being retried or in
+        flight, or the startup grace.
+        """
+        goal = self._goal
+        if (
+            not self.enabled
+            or self.occupied is not False
+            or self._seq is not None
+            or self._pending_on
+            or self._startup_check
+            or (goal is not None and goal.state == STATE_OFF and not goal.warned)
+            or (self._reentry is not None and self._reentry.in_flight)
+            or not self._lights_on()
+        ):
+            return
+        self._seq = OffSequence()
+        self._sequence_wait(now)
 
     def _on_light(
         self,
