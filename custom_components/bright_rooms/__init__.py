@@ -126,10 +126,15 @@ async def async_unload_entry(
     """Unload a config entry."""
     await entry.runtime_data.async_stop()
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
-    panel.async_unregister(hass)  # single config entry
+    # The panel stays through a reload (a zone or the settings saved): removing
+    # it, even for a moment, sends the browser away from it. It goes when the
+    # entry is disabled or removed.
+    if entry.disabled_by is not None:
+        panel.async_unregister(hass)
     return unloaded
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Delete the learned contributions of a removed entry."""
+    """Delete the learned contributions and the panel of a removed entry."""
     await BrightRoomsStore(hass, entry.entry_id).async_remove()
+    panel.async_unregister(hass)  # single config entry

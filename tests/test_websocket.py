@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from freezegun.api import FrozenDateTimeFactory
+from homeassistant.config_entries import ConfigEntryDisabler
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
@@ -466,9 +467,75 @@ async def test_panel_registered_and_removed(
         )
         add_js.assert_called_once()
 
-        await hass.config_entries.async_unload(entry.entry_id)
+        # A reload (a zone or the settings saved) keeps the panel: removing it
+        # would send the browser away from it.
+        await hass.config_entries.async_reload(entry.entry_id)
+        await hass.async_block_till_done()
+        assert register.call_count == 1 and add_js.call_count == 1
+        remove.assert_not_called()
+
+        # Removing the entry removes the panel and the card.
+        await hass.config_entries.async_remove(entry.entry_id)
+        await hass.async_block_till_done()
         remove.assert_called_once_with(hass, "bright-rooms")
         remove_js.assert_called_once()
+
+
+async def test_panel_stays_through_zone_and_settings_saves(
+    hass: HomeAssistant, freezer, tmp_path, hass_ws_client
+) -> None:
+    (tmp_path / panel.PANEL_FILE).write_text("")
+    (tmp_path / panel.CARD_FILE).write_text("")
+    hass.config.components.add("frontend")
+    hass.http = MagicMock(async_register_static_paths=AsyncMock())
+    client = await hass_ws_client(hass)
+    with (
+        patch.object(panel, "FRONTEND_DIR", tmp_path),
+        patch.object(panel, "async_register_built_in_panel") as register,
+        patch.object(panel, "add_extra_js_url"),
+        patch.object(panel, "async_remove_panel") as remove,
+        patch.object(panel, "remove_extra_js_url") as remove_js,
+    ):
+        entry, _ = await make(hass, freezer)
+        room_id = kitchen(entry).subentry_id
+        res = await _call(client, type="bright_rooms/schema", room_id=room_id)
+        values = res["result"]["values"]
+        hall = ar.async_get(hass).async_create("Hall")
+        for msg in (
+            {
+                "type": "bright_rooms/room/save",
+                "room_id": room_id,
+                "data": {**values, CONF_EMPTY_WAIT: 45},
+            },
+            {
+                "type": "bright_rooms/room/save",
+                "data": {
+                    CONF_NAME: "Hall",
+                    CONF_AREA: hall.id,
+                    CONF_PRESENCE_SENSORS: ["binary_sensor.hall"],
+                    CONF_LIGHTS: ["light.hall"],
+                },
+            },
+            {"type": "bright_rooms/settings/save", "data": {CONF_SETTLE_SECONDS: 60}},
+            {
+                "type": "bright_rooms/room/set_enabled",
+                "room_id": room_id,
+                "enabled": False,
+            },
+        ):
+            res = await _call(client, **msg)
+            assert res["success"], msg
+            await hass.async_block_till_done()
+        hall_id = next(
+            sid for sid, sub in entry.subentries.items() if sub.title == "Hall"
+        )
+        res = await _call(client, type="bright_rooms/room/delete", room_id=hall_id)
+        assert res["success"]
+        await hass.async_block_till_done()
+        assert entry.runtime_data.running
+        assert register.call_count == 1
+        remove.assert_not_called()
+        remove_js.assert_not_called()
 
 
 async def test_panel_missing_js(
@@ -491,7 +558,7 @@ def test_versions_match() -> None:
         (root / "custom_components/bright_rooms/manifest.json").read_text()
     )
     frontend = json.loads((root / "frontend/package.json").read_text())
-    assert manifest["version"] == frontend["version"] == "0.2.1"
+    assert manifest["version"] == frontend["version"] == "0.2.2"
 
 
 async def test_schedule_save_and_round_trip(
@@ -643,3 +710,22 @@ async def test_schedule_light_bands_saved(
         },
     )
     assert "room_id" in res["result"]
+
+
+async def test_panel_removed_when_the_entry_is_disabled(
+    hass: HomeAssistant, freezer, tmp_path
+) -> None:
+    (tmp_path / panel.PANEL_FILE).write_text("")
+    hass.config.components.add("frontend")
+    hass.http = MagicMock(async_register_static_paths=AsyncMock())
+    with (
+        patch.object(panel, "FRONTEND_DIR", tmp_path),
+        patch.object(panel, "async_register_built_in_panel"),
+        patch.object(panel, "async_remove_panel") as remove,
+    ):
+        entry, _ = await make(hass, freezer)
+        await hass.config_entries.async_set_disabled_by(
+            entry.entry_id, ConfigEntryDisabler.USER
+        )
+        await hass.async_block_till_done()
+        remove.assert_called_once_with(hass, "bright-rooms")

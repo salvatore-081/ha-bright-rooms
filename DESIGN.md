@@ -374,6 +374,11 @@ Types are in `frontend/src/types.ts`; snake_case keys as below.
 
 ## Panel (sidebar "Bright Rooms", `mdi:lightbulb-auto`, admin only, URL `/bright-rooms`)
 
+The panel and the card are registered once when the entry is set up and stay through reloads (saving a
+zone or the settings reloads the entry: removing the panel even for a moment sends the browser away from
+it). They are removed when the entry is removed or disabled. The card's URL carries the integration
+version, updated at the next restart after an upgrade.
+
 - **Overview**: a tile per room: status with icon and colour, occupied/zone, ambient light with the dark and
   bright thresholds drawn on a small bar (and raw lux, "held" when held), dark yes/no, lights with state and
   brightness, countdown to `deadline`, last action with its reason in words and time, the Automatic switch.
@@ -394,6 +399,6 @@ opens the panel room page. Visual editor (title, rooms).
 As Tidy Rooms: `hacs.json` with `zip_release` and `filename: bright_rooms.zip`, minimum Home Assistant
 `2026.10.0`; workflows Tests (pytest with `pytest-homeassistant-custom-component`, frontend lint, typecheck,
 vitest, build), Validate (HACS action, hassfest), Release (checks the tag against `manifest.json` and
-`frontend/package.json`, builds, uploads the zip). Version 0.2.1. `manifest.json`: `single_config_entry`
+`frontend/package.json`, builds, uploads the zip). Version 0.2.2. `manifest.json`: `single_config_entry`
 true, `integration_type` "service", `iot_class` "calculated", `dependencies` ["light"],
 `after_dependencies` ["frontend", "http", "websocket_api"]. Brand icon in `custom_components/bright_rooms/brand`.
