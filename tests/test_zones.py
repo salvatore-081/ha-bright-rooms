@@ -381,3 +381,74 @@ async def test_explicit_empty_lists_are_saved(
     assert table["neighbors"]["effective"] == [COOK]
     # The zone with a band keeps it.
     assert [b["id"] for b in entry.subentries["cooktop"].data["schedule"]] == ["b"]
+
+
+async def test_other_lights_auto_and_manual(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, _ = await make_zones(
+        hass,
+        freezer,
+        *kitchen_zones(other_lights=["light.sofa", "light.cooktop", "light.hall"]),
+    )
+    cook = by_name(entry, "Cooktop")
+    assert cook.other_lights() == {
+        "auto": ["light.table"],
+        "manual": ["light.sofa", "light.cooktop", "light.hall"],
+        # The zone's own light is never an "other" light.
+        "effective": ["light.table", "light.sofa", "light.hall"],
+    }
+    assert by_name(entry, "Table").other_lights()["effective"] == ["light.cooktop"]
+    assert by_name(entry, "Sofa").other_lights()["effective"] == []
+    snap = next(
+        r for r in entry.runtime_data.snapshot()["rooms"] if r["id"] == "cooktop"
+    )
+    assert snap["other_lights"] == cook.other_lights()
+    assert snap["config"]["other_lights"] == [
+        "light.sofa",
+        "light.cooktop",
+        "light.hall",
+    ]
+    assert snap["config"]["auto_other_lights"] is True
+
+
+async def test_other_lights_auto_off(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, _ = await make_zones(hass, freezer, *kitchen_zones(auto_other_lights=False))
+    assert by_name(entry, "Cooktop").other_lights() == {
+        "auto": [],
+        "manual": [],
+        "effective": [],
+    }
+
+
+async def _measure_cooktop_with_table_switched(hass, freezer, entry):
+    """The cooktop light goes on; 10 s later someone turns on the table lamp."""
+    attrs = {"supported_color_modes": ["onoff"], "color_mode": "onoff"}
+    hass.states.async_set(LUX, "10", {"device_class": "illuminance"})
+    hass.states.async_set("light.cooktop", "on", attrs)
+    await advance(hass, freezer, 10)
+    hass.states.async_set("light.table", "on", attrs)
+    hass.states.async_set(LUX, "110", {"device_class": "illuminance"})
+    await advance(hass, freezer, 80, step=10)
+    return by_name(entry, "Cooktop").contribution("light.cooktop")
+
+
+async def test_measurement_discarded_by_a_light_of_another_zone(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, _ = await make_zones(hass, freezer, *kitchen_zones(empty_wait=3600))
+    assert (
+        await _measure_cooktop_with_table_switched(hass, freezer, entry)
+    ).samples == 0
+
+
+async def test_measurement_kept_without_automatic_other_lights(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory
+) -> None:
+    entry, _ = await make_zones(
+        hass, freezer, *kitchen_zones(empty_wait=3600, auto_other_lights=False)
+    )
+    contribution = await _measure_cooktop_with_table_switched(hass, freezer, entry)
+    assert (contribution.value, contribution.samples) == (100, 1)

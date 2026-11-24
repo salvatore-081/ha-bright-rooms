@@ -60,6 +60,7 @@ from .ambient import (
 from .const import (
     CONF_AREA,
     CONF_AUTO_NEIGHBORS,
+    CONF_AUTO_OTHER_LIGHTS,
     CONF_BRIGHT_ABOVE,
     CONF_BRIGHT_MINUTES,
     CONF_BRIGHTNESS_DARK_LUX,
@@ -148,6 +149,7 @@ class RoomConfig:
     lights: tuple[str, ...]
     illuminance_sensor: str | None
     other_lights: tuple[str, ...]
+    auto_other_lights: bool
     on_delay: float
     only_when_dark: bool
     dark_below: float
@@ -179,6 +181,7 @@ class RoomConfig:
             lights=tuple(d.get(CONF_LIGHTS) or ()),
             illuminance_sensor=d.get(CONF_ILLUMINANCE_SENSOR) or None,
             other_lights=tuple(d.get(CONF_OTHER_LIGHTS) or ()),
+            auto_other_lights=bool(d[CONF_AUTO_OTHER_LIGHTS]),
             on_delay=float(d[CONF_ON_DELAY]),
             only_when_dark=bool(d[CONF_ONLY_WHEN_DARK]),
             dark_below=float(d[CONF_DARK_BELOW]),
@@ -338,7 +341,7 @@ class RoomEngine:
             *cfg.presence_sensors,
             *self._all_zone_sensors(),
             *cfg.lights,
-            *cfg.other_lights,
+            *self._other_lights,
         }
         if cfg.illuminance_sensor:
             watched.add(cfg.illuminance_sensor)
@@ -418,6 +421,34 @@ class RoomEngine:
             "effective": effective,
         }
 
+    def other_lights(self) -> dict[str, list[str]]:
+        """Lights the illuminance sensor may see besides the zone's own.
+
+        A change of one of them during a measurement discards it. `auto`:
+        the lights of the other zones of the same area (with
+        `auto_other_lights`); `manual`: the zone's `other_lights`;
+        `effective`: both, without the zone's own lights and repeats.
+        """
+        cfg = self.cfg
+        own = set(cfg.lights)
+        auto: list[str] = []
+        if cfg.auto_other_lights:
+            for zone in self.parent.rooms.values():
+                if zone is not self and zone.cfg.area_id == cfg.area_id:
+                    auto.extend(zone.cfg.lights)
+        auto = [e for e in dict.fromkeys(auto) if e not in own]
+        return {
+            "auto": auto,
+            "manual": list(cfg.other_lights),
+            "effective": [
+                e for e in dict.fromkeys([*auto, *cfg.other_lights]) if e not in own
+            ],
+        }
+
+    @property
+    def _other_lights(self) -> set[str]:
+        return set(self.other_lights()["effective"])
+
     def _all_zone_sensors(self) -> set[str]:
         """The room's zone sensors and those of its bands."""
         sensors = set(self.neighbors()["effective"])
@@ -490,7 +521,7 @@ class RoomEngine:
         cfg = self.cfg
         if entity_id in cfg.lights:
             self._on_light(entity_id, old, new, event.context, now)
-        elif entity_id in cfg.other_lights and _light_change(old, new):
+        elif entity_id in self._other_lights and _light_change(old, new):
             self._last_change[entity_id] = now
             self._drop_measurement(Rejection.OTHER_LIGHT_CHANGED)
         if entity_id == cfg.illuminance_sensor:
@@ -1511,6 +1542,7 @@ class RoomEngine:
             "lights": lights,
             "sensor_entities": self.sensor_entities(),
             "neighbors": self.neighbors(),
+            "other_lights": self.other_lights(),
         }
 
 

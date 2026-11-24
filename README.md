@@ -25,6 +25,7 @@ In the rest of this page, "zone" means a light zone.
 - **Back in a moment**: if someone comes back while the lights are going off, or within 10 seconds after, the lights the zone just turned off come back on as they were.
 - **Bands**: each zone can have up to 8 bands that change some of its settings while they apply: the presence needed before turning on, the wait with the zone empty, the extra wait for nearby presence and which nearby sensors count. A band applies in a time window (for example *dinner, 20:00–23:00*, or *night, 23:00–07:00 on weekdays*), when this zone or another zone is bright or dark (for example *bright: wait 2 minutes of presence before turning on*), or both. The first band that matches wins; outside the bands the zone's own values apply. Bands are edited in the panel.
 - **Your choices win**: a light turned off by hand while the zone is occupied is not turned on again until the next time someone comes in. Lights changed by other automations or by hand count as "someone else".
+- **Other lights**: the illuminance sensor may also see lights that are not the zone's own: by default the lights of the other zones of the same room, plus any you add (lights of other rooms, or not managed by Bright Rooms). They only matter for learning: a measurement during which one of them changes is discarded.
 - **Learning the lamps**: every time a light is switched on or off (by Bright Rooms or by anyone), with little daylight and nothing else changing, Bright Rooms compares the illuminance before and after and updates that light's **contribution** (lux at full brightness). Lights switched together count as one measurement: if their values are known they are scaled together; if only one is unknown, it gets the part the others do not explain. Measurements that look wrong are discarded. Values can also be set by hand.
 - **Ambient light** = sensor reading − the contributions of the zone's lights that are on (scaled by their brightness). Illuminance sensors report late, so after a light changes the ambient light is held for a settling time; it is also held while a light is unavailable or not learned yet.
 - **Dark and bright** use two thresholds (hysteresis), so a cloud does not switch the lights on and off. Without an illuminance sensor (or while it is unavailable) a zone counts as dark. When the sensor has a reading but the ambient light is not known yet (for example right after a lamp changed, before the sensor catches up), turning on waits for it, up to the settling time plus 15 seconds.
@@ -71,7 +72,7 @@ Download `bright_rooms.zip` from the latest release, unpack it into `config/cust
 ## Configuration
 
 1. **Settings → Devices & services → Add integration → Bright Rooms**.
-2. In the **Bright Rooms** panel, add a light zone for each group of lights: a name, its room (area), presence sensors, lights, illuminance sensor, and optionally neighbouring zones of other rooms, extra nearby presence sensors and other lights the illuminance sensor sees (a lamp in the next room through an open door).
+2. In the **Bright Rooms** panel, add a light zone for each group of lights: a name, its room (area), presence sensors, lights, illuminance sensor, and optionally neighbouring zones of other rooms, extra nearby presence sensors and other lights the illuminance sensor sees (a lamp in the next room through an open door; the lights of the other zones of the same room count by default).
 3. Let Bright Rooms learn the contributions over a few evenings. In a zone with several lights, switch each one on and off by itself once with the zone dark (two unknown lights switched together cannot be told apart); or type the values in the zone page.
 
 Light zones and settings can also be managed from the integration page (**Add light zone**, **Configure**): both edit the same configuration.
@@ -84,6 +85,7 @@ Main zone settings:
 | Turn on only when dark | on | Otherwise the lights turn on whenever someone comes in |
 | Dark below / bright above | 40 / 80 lx | Ambient light thresholds, with hysteresis in between |
 | Other zones of the same room count as nearby presence | on | Their presence makes turning off wait longer |
+| The lights of the other zones of this room | on | Count as other lights for learning |
 | Turn on when it becomes dark | on | Only on the bright → dark transition, with someone already in the zone |
 | Turn off when it becomes bright | on, after 10 min | Only on the dark → bright transition |
 | Brightness in the dark | 100 % | Dimmable lights at or below 10 lx; 100 % from 200 lx, linear in between |

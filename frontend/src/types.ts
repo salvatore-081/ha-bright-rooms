@@ -88,6 +88,8 @@ export interface RoomConfig {
   auto_neighbors?: boolean;
   /** Zones (of any area) whose presence sensors count as nearby presence. */
   neighbor_zones?: string[];
+  /** The lights of the other zones in the same area count as other lights. */
+  auto_other_lights?: boolean;
   /** Time bands, at most 8; the first active one wins. */
   schedule?: Band[];
   [key: string]: unknown;
@@ -129,6 +131,8 @@ export interface RoomSnapshot {
   goal?: "on" | "off" | null;
   /** Where the nearby presence comes from, and the sensors in force. */
   neighbors?: Neighbors;
+  /** Other lights the sensor sees (a change discards a measurement). */
+  other_lights?: OtherLights;
   /** The id of the time band in force, if any. */
   active_band?: string | null;
   /** The values in force (the active band's, or the room's). */
@@ -152,6 +156,15 @@ export interface Neighbors {
   /** Extra sensors (zone_sensors). */
   sensors: string[];
   /** The sensors in force now (an active band may replace them). */
+  effective: string[];
+}
+
+export interface OtherLights {
+  /** Lights of the other zones of the same area (auto_other_lights). */
+  auto: string[];
+  /** Lights chosen by hand (other_lights). */
+  manual: string[];
+  /** Both, without the zone's own lights. */
   effective: string[];
 }
 

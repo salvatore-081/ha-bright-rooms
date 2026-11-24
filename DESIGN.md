@@ -40,6 +40,10 @@ keys and in the engine's text means a light zone, unless it says area.
 - **Zone sensors** (in keys and texts below: `zone_sensors`, `zone_wait`, `zone_occupied`): the effective
   neighbouring sensors above. While one is `on`, turning off waits longer.
 - **Raw lux**: the state of the room's illuminance sensor (optional).
+- **Other lights**: lights the zone's illuminance sensor may see besides the zone's own. They matter only
+  for learning contributions: a change of one of them during a measurement discards it. Effective other
+  lights = **automatic** (`auto_other_lights`, default true: the lights of the other zones of the same area)
+  ∪ **manual** (`other_lights`), minus the zone's own lights, without repeats.
 - **Contribution** of a light: lux it adds to the raw reading when on at full brightness. Learned, per room
   and light, stored with `homeassistant.helpers.storage.Store` (`bright_rooms.<entry_id>`), editable from the
   panel. `None` until the first valid measurement (or a value set by hand).
@@ -78,7 +82,8 @@ keys and in the engine's text means a light zone, unless it says area.
 | `zone_sensors` | list of binary_sensor | `[]` | Extra nearby presence ("presenze vicine"), extends the wait before turning off |
 | `lights` | list of light | required (≥1) | Lights switched by Bright Rooms |
 | `illuminance_sensor` | sensor (device_class illuminance) | none | Without it: always "dark", no brightness from light |
-| `other_lights` | list of light | `[]` | Other lights the illuminance sensor sees: a measurement is discarded if one changes |
+| `auto_other_lights` | bool | true | The lights of the other zones of the same area count as other lights |
+| `other_lights` | list of light | `[]` | Manual other lights ("Altre luci"): lights of other rooms, or not managed by Bright Rooms, that the illuminance sensor sees |
 | `on_delay` | s, 0–600 | 0 | Continuous presence needed before turning on |
 | `only_when_dark` | bool | true | Turn on only when dark (or no reading) |
 | `dark_below` | lx | 40 | Dark under this ambient light |
@@ -199,7 +204,7 @@ Status (`status` sensor, enum): `disabled` (switch off), `off` (lights off), `on
    member must also satisfy the previous-state rule. A single light is a group of one. Valid only if: both
    readings are numbers; the ambient light without the group (before when turning on, after when turning off)
    is ≤ `learn_ambient_max`; no member changed again (state or brightness) during the measurement; no room
-   light outside the group and no `other_lights` changed from 30 s before the first change to the end; the
+   light outside the group and no other light (effective other lights, see Concepts) changed from 30 s before the first change to the end; the
    jump as measured is ≥ 5 lx. With fraction f_i (brightness/255 while on, 1 for on/off lights):
    - every contribution known: expected = Σ c_i·f_i, factor = jump/expected, valid if 1/3 ≤ factor ≤ 3; each
      c_i ← c_i·(1 − weight) + c_i·factor·weight (for one light: the jump normalized, between value/3 and
@@ -345,7 +350,9 @@ Types are in `frontend/src/types.ts`; snake_case keys as below.
                                    // devices with entity_category "config" and domain number, select,
                                    // switch or button (sensitivity, absence delay, ranges, calibration)
     neighbors: {auto: [entity_id], manual_zones: [subentry_id], sensors: [entity_id],
-                effective: [entity_id]}   // nearby presence by origin (bands not applied)
+                effective: [entity_id]},  // nearby presence by origin (bands not applied)
+    other_lights: {auto: [entity_id], manual: [entity_id], effective: [entity_id]}
+                                   // other lights by origin; config.other_lights is the manual list
   }
   ```
 - `bright_rooms/schema` `{room_id?}` → one result `{schema: FormField[], values: {}, settings_schema:
@@ -399,6 +406,6 @@ opens the panel room page. Visual editor (title, rooms).
 As Tidy Rooms: `hacs.json` with `zip_release` and `filename: bright_rooms.zip`, minimum Home Assistant
 `2026.10.0`; workflows Tests (pytest with `pytest-homeassistant-custom-component`, frontend lint, typecheck,
 vitest, build), Validate (HACS action, hassfest), Release (checks the tag against `manifest.json` and
-`frontend/package.json`, builds, uploads the zip). Version 0.2.2. `manifest.json`: `single_config_entry`
+`frontend/package.json`, builds, uploads the zip). Version 0.2.3. `manifest.json`: `single_config_entry`
 true, `integration_type` "service", `iot_class` "calculated", `dependencies` ["light"],
 `after_dependencies` ["frontend", "http", "websocket_api"]. Brand icon in `custom_components/bright_rooms/brand`.

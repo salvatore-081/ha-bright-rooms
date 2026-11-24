@@ -16,6 +16,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_AREA,
     CONF_AUTO_NEIGHBORS,
+    CONF_AUTO_OTHER_LIGHTS,
     CONF_BRIGHT_ABOVE,
     CONF_BRIGHT_MINUTES,
     CONF_BRIGHTNESS_DARK_LUX,
@@ -151,6 +152,7 @@ def room_schema(zones: list[tuple[str, str]] | None = None) -> vol.Schema:
                     domain=SENSOR_DOMAIN, device_class="illuminance"
                 )
             ),
+            vol.Required(CONF_AUTO_OTHER_LIGHTS): selector.BooleanSelector(),
             vol.Optional(CONF_OTHER_LIGHTS): LIGHTS_SELECTOR,
             vol.Required(CONF_ON_DELAY): _number(600, "s"),
             vol.Required(CONF_ONLY_WHEN_DARK): selector.BooleanSelector(),

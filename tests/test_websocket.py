@@ -196,6 +196,7 @@ async def test_schema(
         "zone_sensors",
         "lights",
         "illuminance_sensor",
+        "auto_other_lights",
         "other_lights",
         "on_delay",
         "only_when_dark",
@@ -558,7 +559,7 @@ def test_versions_match() -> None:
         (root / "custom_components/bright_rooms/manifest.json").read_text()
     )
     frontend = json.loads((root / "frontend/package.json").read_text())
-    assert manifest["version"] == frontend["version"] == "0.2.2"
+    assert manifest["version"] == frontend["version"] == "0.2.3"
 
 
 async def test_schedule_save_and_round_trip(

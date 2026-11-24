@@ -37,6 +37,8 @@ CONF_NEIGHBOR_ZONES: Final = "neighbor_zones"
 CONF_LIGHTS: Final = "lights"
 CONF_ILLUMINANCE_SENSOR: Final = "illuminance_sensor"
 CONF_OTHER_LIGHTS: Final = "other_lights"
+# The lights of the other zones of the same area count as other lights.
+CONF_AUTO_OTHER_LIGHTS: Final = "auto_other_lights"
 CONF_ON_DELAY: Final = "on_delay"
 CONF_ONLY_WHEN_DARK: Final = "only_when_dark"
 CONF_DARK_BELOW: Final = "dark_below"
@@ -57,6 +59,7 @@ CONF_SCHEDULE: Final = "schedule"
 
 ROOM_DEFAULTS: Final[dict[str, object]] = {
     CONF_AUTO_NEIGHBORS: True,
+    CONF_AUTO_OTHER_LIGHTS: True,
     CONF_ON_DELAY: 0,
     CONF_ONLY_WHEN_DARK: True,
     CONF_DARK_BELOW: 40,

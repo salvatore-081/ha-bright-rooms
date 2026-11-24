@@ -129,6 +129,9 @@ export const groupFields = (schema: FormField[]): FieldGroup[] => {
 /** Fields the editor draws itself: the nearby zones. */
 export const NEIGHBOR_FIELDS = ["auto_neighbors", "neighbor_zones"];
 
+/** Fields the editor draws itself: nearby zones and the other zones' lights. */
+export const CUSTOM_FIELDS = [...NEIGHBOR_FIELDS, "auto_other_lights"];
+
 /** The schema without some fields, also inside sections. */
 export const withoutFields = (schema: FormField[], names: string[]): FormField[] =>
   schema
@@ -140,7 +143,7 @@ export const withoutFields = (schema: FormField[], names: string[]): FormField[]
  * (after "presence", or last), since the editor draws the nearby zones in it.
  */
 export const zoneFormGroups = (schema: FormField[]): FieldGroup[] => {
-  const groups = groupFields(withoutFields(schema, NEIGHBOR_FIELDS));
+  const groups = groupFields(withoutFields(schema, CUSTOM_FIELDS));
   if (groups.some((g) => g.key === "neighbors")) return groups;
   const neighbors: FieldGroup = {
     key: "neighbors",

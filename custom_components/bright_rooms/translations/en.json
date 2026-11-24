@@ -60,7 +60,8 @@
             "zone_sensors": "Nearby presence",
             "lights": "Lights",
             "illuminance_sensor": "Illuminance sensor",
-            "other_lights": "Other lights seen by the illuminance sensor",
+            "auto_other_lights": "The lights of the other zones of this room",
+            "other_lights": "Other lights",
             "on_delay": "Presence before turning on",
             "only_when_dark": "Turn on only when dark",
             "dark_below": "Dark below",
@@ -85,7 +86,7 @@
             "zone_sensors": "Other presence sensors that count as nearby presence. While one of them is on, turning off waits longer: people often move nearby and come back.",
             "lights": "The lights Bright Rooms switches. A light can belong to one zone only.",
             "illuminance_sensor": "Optional. Without it the zone always counts as dark and dimmable lights turn on at full brightness.",
-            "other_lights": "Lights of other zones that the illuminance sensor sees: a measurement of a light's contribution is discarded when one of them changes.",
+            "other_lights": "Lights of other rooms, or not managed by Bright Rooms, that the illuminance sensor sees: if one changes during a measurement, the measurement is discarded.",
             "on_delay": "Continuous presence needed before the lights turn on.",
             "only_when_dark": "Ambient light is measured without the zone's own lights.",
             "bright_above": "Must be higher than the dark threshold: in between, the zone keeps its previous state.",
@@ -97,7 +98,8 @@
             "dim_percent": "Dimmable lights are dimmed to this share of their brightness as a warning before turning off (100 % = no warning). If someone comes back, they return to their brightness.",
             "transition": "Dimmable lights only.",
             "auto_neighbors": "Their presence sensors make turning off wait longer, as nearby presence.",
-            "neighbor_zones": "Zones of any room whose presence sensors also count as nearby presence (an open kitchen next to the living room)."
+            "neighbor_zones": "Zones of any room whose presence sensors also count as nearby presence (an open kitchen next to the living room).",
+            "auto_other_lights": "Only for measuring the lamps' contribution: a change of one of them during a measurement discards it."
           },
           "description": "A light zone is a group of lights switched by its own presence sensors. Zones are grouped into rooms by their area: the zones of the same area count as each other's nearby presence. The contribution of each light is learned by itself, or can be set in the Bright Rooms panel."
         },
@@ -112,7 +114,8 @@
             "zone_sensors": "Nearby presence",
             "lights": "Lights",
             "illuminance_sensor": "Illuminance sensor",
-            "other_lights": "Other lights seen by the illuminance sensor",
+            "auto_other_lights": "The lights of the other zones of this room",
+            "other_lights": "Other lights",
             "on_delay": "Presence before turning on",
             "only_when_dark": "Turn on only when dark",
             "dark_below": "Dark below",
@@ -137,7 +140,7 @@
             "zone_sensors": "Other presence sensors that count as nearby presence. While one of them is on, turning off waits longer: people often move nearby and come back.",
             "lights": "The lights Bright Rooms switches. A light can belong to one zone only.",
             "illuminance_sensor": "Optional. Without it the zone always counts as dark and dimmable lights turn on at full brightness.",
-            "other_lights": "Lights of other zones that the illuminance sensor sees: a measurement of a light's contribution is discarded when one of them changes.",
+            "other_lights": "Lights of other rooms, or not managed by Bright Rooms, that the illuminance sensor sees: if one changes during a measurement, the measurement is discarded.",
             "on_delay": "Continuous presence needed before the lights turn on.",
             "only_when_dark": "Ambient light is measured without the zone's own lights.",
             "bright_above": "Must be higher than the dark threshold: in between, the zone keeps its previous state.",
@@ -149,7 +152,8 @@
             "dim_percent": "Dimmable lights are dimmed to this share of their brightness as a warning before turning off (100 % = no warning). If someone comes back, they return to their brightness.",
             "transition": "Dimmable lights only.",
             "auto_neighbors": "Their presence sensors make turning off wait longer, as nearby presence.",
-            "neighbor_zones": "Zones of any room whose presence sensors also count as nearby presence (an open kitchen next to the living room)."
+            "neighbor_zones": "Zones of any room whose presence sensors also count as nearby presence (an open kitchen next to the living room).",
+            "auto_other_lights": "Only for measuring the lamps' contribution: a change of one of them during a measurement discards it."
           }
         }
       }

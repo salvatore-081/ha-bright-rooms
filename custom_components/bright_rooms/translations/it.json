@@ -60,7 +60,8 @@
             "zone_sensors": "Presenze vicine",
             "lights": "Luci",
             "illuminance_sensor": "Sensore di luminosità",
-            "other_lights": "Altre luci viste dal sensore di luminosità",
+            "auto_other_lights": "Le luci delle altre zone di questa stanza",
+            "other_lights": "Altre luci",
             "on_delay": "Presenza prima di accendere",
             "only_when_dark": "Accendi solo con il buio",
             "dark_below": "Buio sotto",
@@ -85,7 +86,7 @@
             "zone_sensors": "Altri sensori di presenza che contano come presenze vicine. Se uno di questi rileva qualcuno, lo spegnimento aspetta di più: spesso ci si sposta lì vicino e si torna.",
             "lights": "Le luci comandate da Bright Rooms. Una luce può stare in una sola zona.",
             "illuminance_sensor": "Facoltativo. Senza, la zona è sempre considerata al buio e le luci dimmerabili si accendono al massimo.",
-            "other_lights": "Luci di altre zone che il sensore di luminosità vede: se una di queste cambia, la misura dell'apporto di una luce viene scartata.",
+            "other_lights": "Luci di altre stanze o non gestite da Bright Rooms viste dal sensore: se una cambia durante una misura, la misura viene scartata.",
             "on_delay": "Per quanto tempo deve esserci qualcuno, senza interruzioni, prima di accendere.",
             "only_when_dark": "La luce ambiente si misura senza le luci della zona.",
             "bright_above": "Deve essere più alta della soglia del buio: nel mezzo la zona resta com'era.",
@@ -97,7 +98,8 @@
             "dim_percent": "Prima di spegnere, le luci dimmerabili si abbassano a questa parte della loro luminosità come avviso (100 % = nessun avviso). Se qualcuno torna, riprendono la luminosità di prima.",
             "transition": "Solo luci dimmerabili.",
             "auto_neighbors": "I loro sensori di presenza fanno aspettare di più prima di spegnere, come presenze vicine.",
-            "neighbor_zones": "Zone di qualsiasi stanza i cui sensori di presenza contano anch'essi come presenze vicine (una cucina aperta sul soggiorno)."
+            "neighbor_zones": "Zone di qualsiasi stanza i cui sensori di presenza contano anch'essi come presenze vicine (una cucina aperta sul soggiorno).",
+            "auto_other_lights": "Servono solo per misurare l'apporto delle lampade: se una cambia durante una misura, la misura viene scartata."
           },
           "description": "Una zona luce è un gruppo di luci comandato dai suoi sensori di presenza. Le zone si raggruppano in stanze secondo l'area: le zone della stessa area contano come presenze vicine l'una dell'altra. L'apporto di ogni luce si impara da solo, oppure si imposta nel pannello Bright Rooms."
         },
@@ -112,7 +114,8 @@
             "zone_sensors": "Presenze vicine",
             "lights": "Luci",
             "illuminance_sensor": "Sensore di luminosità",
-            "other_lights": "Altre luci viste dal sensore di luminosità",
+            "auto_other_lights": "Le luci delle altre zone di questa stanza",
+            "other_lights": "Altre luci",
             "on_delay": "Presenza prima di accendere",
             "only_when_dark": "Accendi solo con il buio",
             "dark_below": "Buio sotto",
@@ -137,7 +140,7 @@
             "zone_sensors": "Altri sensori di presenza che contano come presenze vicine. Se uno di questi rileva qualcuno, lo spegnimento aspetta di più: spesso ci si sposta lì vicino e si torna.",
             "lights": "Le luci comandate da Bright Rooms. Una luce può stare in una sola zona.",
             "illuminance_sensor": "Facoltativo. Senza, la zona è sempre considerata al buio e le luci dimmerabili si accendono al massimo.",
-            "other_lights": "Luci di altre zone che il sensore di luminosità vede: se una di queste cambia, la misura dell'apporto di una luce viene scartata.",
+            "other_lights": "Luci di altre stanze o non gestite da Bright Rooms viste dal sensore: se una cambia durante una misura, la misura viene scartata.",
             "on_delay": "Per quanto tempo deve esserci qualcuno, senza interruzioni, prima di accendere.",
             "only_when_dark": "La luce ambiente si misura senza le luci della zona.",
             "bright_above": "Deve essere più alta della soglia del buio: nel mezzo la zona resta com'era.",
@@ -149,7 +152,8 @@
             "dim_percent": "Prima di spegnere, le luci dimmerabili si abbassano a questa parte della loro luminosità come avviso (100 % = nessun avviso). Se qualcuno torna, riprendono la luminosità di prima.",
             "transition": "Solo luci dimmerabili.",
             "auto_neighbors": "I loro sensori di presenza fanno aspettare di più prima di spegnere, come presenze vicine.",
-            "neighbor_zones": "Zone di qualsiasi stanza i cui sensori di presenza contano anch'essi come presenze vicine (una cucina aperta sul soggiorno)."
+            "neighbor_zones": "Zone di qualsiasi stanza i cui sensori di presenza contano anch'essi come presenze vicine (una cucina aperta sul soggiorno).",
+            "auto_other_lights": "Servono solo per misurare l'apporto delle lampade: se una cambia durante una misura, la misura viene scartata."
           }
         }
       }

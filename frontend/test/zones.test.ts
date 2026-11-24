@@ -120,6 +120,18 @@ describe("rooms and zones", () => {
       zoneFormGroups([{ name: "presence_sensors" }, { name: "lights" }]).map((g) => g.key),
     ).toEqual(["presence", "neighbors", "lights"]);
   });
+
+  it("keeps the other zones' lights switch out of ha-form", () => {
+    const groups = zoneFormGroups([
+      { name: "illuminance_sensor" },
+      { name: "auto_other_lights" },
+      { name: "other_lights" },
+    ]);
+    expect(groups.map((g) => [g.key, g.schema.map((f) => f.name)])).toEqual([
+      ["daylight", ["illuminance_sensor", "other_lights"]],
+      ["neighbors", []],
+    ]);
+  });
 });
 
 describe("overview", () => {

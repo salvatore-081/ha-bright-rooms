@@ -322,6 +322,7 @@ export class BrRoomEditor extends LitElement {
                 : nothing
             }
             ${group.key === "neighbors" ? this._neighbors(fields) : nothing}
+            ${group.key === "daylight" ? this._otherLights() : nothing}
             <div class="card-content" ?hidden=${group.schema.length === 0}>
               <ha-form
                 .hass=${this.hass}
@@ -426,6 +427,49 @@ export class BrRoomEditor extends LitElement {
           : nothing
       }
       <div class="hint">${t("neighbors.sensors_hint")}</div>
+    </div>`;
+  }
+
+  /** Other lights: those of the other zones of this room, and those in use. */
+  private _otherLights() {
+    const { t } = this.ctx;
+    const area = this._data.area as string | undefined;
+    const sameArea = this.snapshot.rooms.filter((z) => z.id !== this.roomId && z.area_id === area);
+    const lights = sameArea.flatMap((z) => z.lights.map((l) => l.name));
+    const auto = this._data.auto_other_lights !== false;
+    const effective = this._room?.other_lights?.effective;
+    return html`<div class="card-content neighbors-custom other-lights">
+      <div class="switch-row">
+        <br-switch
+          class="auto-other-lights"
+          .checked=${auto}
+          .label=${t("other_lights.auto")}
+          .disabled=${this._saving}
+          @change=${(ev: CustomEvent<{ checked: boolean }>) =>
+            (this._data = { ...this._data, auto_other_lights: ev.detail.checked })}
+        ></br-switch>
+        <div>
+          <div>${t("other_lights.auto")}</div>
+          <div class="hint auto-lights">
+            ${
+              lights.length
+                ? lights.join(", ")
+                : t(area ? "other_lights.auto_none" : "neighbors.auto_no_area")
+            }
+          </div>
+        </div>
+      </div>
+      ${
+        effective
+          ? html`<div class="in-use">
+              <ha-icon icon="mdi:lightbulb-group-outline"></ha-icon>${t("other_lights.in_use", {
+                names: effective.length
+                  ? effective.map((id) => entityName(this.hass, id)).join(", ")
+                  : t("neighbors.in_use_none"),
+              })}
+            </div>`
+          : nothing
+      }
     </div>`;
   }
 
