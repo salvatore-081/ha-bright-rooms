@@ -312,3 +312,72 @@ async def test_room_device_removed_with_its_last_zone(
     hass.config_entries.async_remove_subentry(entry, "sofa")
     await hass.async_block_till_done()
     assert devices.async_get_device_by_identifier(key, entry.entry_id) is None
+
+
+async def test_explicit_empty_lists_are_saved(
+    hass: HomeAssistant, freezer: FrozenDateTimeFactory, hass_ws_client
+) -> None:
+    """Saving `[]` clears a list, for a zone without bands and one with bands."""
+    client = await hass_ws_client(hass)
+    band = {"id": "b", "start": "06:00", "end": "08:00", "empty_wait": 60}
+    entry, _ = await make_zones(
+        hass,
+        freezer,
+        zone(
+            "Cooktop",
+            "Kitchen",
+            COOK,
+            "light.cooktop",
+            id="cooktop",
+            zone_sensors=[TABLE],
+            schedule=[band],
+        ),
+        zone(
+            "Table",
+            "Kitchen",
+            TABLE,
+            "light.table",
+            id="table",
+            zone_sensors=[COOK],
+            neighbor_zones=["sofa"],
+            other_lights=["light.sofa"],
+        ),
+        zone("Sofa", "Living room", LIVING, "light.sofa", id="sofa"),
+    )
+    await client.send_json_auto_id({"type": "bright_rooms/rooms"})
+    snap = (await client.receive_json())["result"]
+    for zone_id in ("table", "cooktop"):
+        config = next(r for r in snap["rooms"] if r["id"] == zone_id)["config"]
+        await client.send_json_auto_id(
+            {
+                "type": "bright_rooms/room/save",
+                "room_id": zone_id,
+                "data": {
+                    **config,
+                    "zone_sensors": [],
+                    "neighbor_zones": [],
+                    "other_lights": [],
+                },
+            }
+        )
+        assert (await client.receive_json())["result"] == {"room_id": zone_id}
+        await hass.async_block_till_done()
+        data = entry.subentries[zone_id].data
+        assert data["zone_sensors"] == []
+        assert data["neighbor_zones"] == []
+        assert data["other_lights"] == []
+    # Reloaded twice: still empty, also in the snapshot.
+    await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    await client.send_json_auto_id({"type": "bright_rooms/rooms"})
+    snap = (await client.receive_json())["result"]
+    for zone_id in ("table", "cooktop"):
+        room = next(r for r in snap["rooms"] if r["id"] == zone_id)
+        assert room["config"]["zone_sensors"] == []
+        assert room["neighbors"]["sensors"] == []
+        assert room["neighbors"]["manual_zones"] == []
+    # Only the automatic neighbour is left (the other zone of the same area).
+    table = next(r for r in snap["rooms"] if r["id"] == "table")
+    assert table["neighbors"]["effective"] == [COOK]
+    # The zone with a band keeps it.
+    assert [b["id"] for b in entry.subentries["cooktop"].data["schedule"]] == ["b"]

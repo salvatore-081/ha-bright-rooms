@@ -187,10 +187,17 @@ def room_title(
     return area.name if area else fallback or str(data.get(CONF_AREA) or "")
 
 
+# Optional lists saved as given: an explicit [] is stored, so it clears them.
+LIST_FIELDS = {CONF_ZONE_SENSORS, CONF_NEIGHBOR_ZONES, CONF_OTHER_LIGHTS}
+
+
 def _clean(data: dict[str, Any]) -> dict[str, Any]:
-    """Whole numbers as int, empty optional fields left out."""
+    """Whole numbers as int, empty optional fields left out (lists kept as [])."""
     out: dict[str, Any] = {}
     for key, value in data.items():
+        if value == [] and key in LIST_FIELDS:
+            out[key] = []
+            continue
         if value in (None, "", []):
             continue
         if key in INT_FIELDS and isinstance(value, float) and value.is_integer():
